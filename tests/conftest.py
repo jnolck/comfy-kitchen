@@ -7,6 +7,7 @@ import comfy_kitchen as ck
 
 
 def pytest_configure(config):
+    config.addinivalue_line("markers", "hip: mark test as requiring HIP")
     config.addinivalue_line("markers", "cuda: mark test as requiring CUDA")
     config.addinivalue_line("markers", "slow: mark test as slow running")
     config.addinivalue_line("markers", "cupy: mark test as requiring CuPy")
@@ -79,7 +80,7 @@ def get_capable_backends(func_name: str, device: str | None = None) -> list[str]
     capable = []
     backends = ck.list_backends()
 
-    for backend_name in ["cuda", "triton", "eager"]:
+    for backend_name in ["hip", "cuda", "triton", "eager"]:
         if not backends.get(backend_name, {}).get("available", False):
             continue
 
@@ -101,7 +102,7 @@ def get_supported_devices(func_name: str) -> set[str]:
     devices = set()
     backends = ck.list_backends()
 
-    for backend_name in ["cuda", "triton", "eager"]:
+    for backend_name in ["hip", "cuda", "triton", "eager"]:
         if not backends.get(backend_name, {}).get("available", False):
             continue
 
@@ -217,8 +218,10 @@ def assert_values_close(values, ref_values, rtol, atol, name="values", max_misma
 
         # If max_mismatch_ratio is set and we're below it, pass with a warning
         if max_mismatch_ratio > 0 and mismatch_ratio <= max_mismatch_ratio:
-            print(f"Warning: {num_failures} / {total_elements} ({mismatch_ratio*100:.4f}%) {name} "
-                  f"differ (rtol={rtol}, atol={atol}), but within allowed ratio ({max_mismatch_ratio*100}%)")
+            print(
+                f"Warning: {num_failures} / {total_elements} ({mismatch_ratio * 100:.4f}%) {name} "
+                f"differ (rtol={rtol}, atol={atol}), but within allowed ratio ({max_mismatch_ratio * 100}%)"
+            )
             return
 
         print(f"Failed: \n{num_failures} {name} are not close.")
@@ -232,6 +235,4 @@ def assert_values_close(values, ref_values, rtol, atol, name="values", max_misma
                 f"  [{i}] Index {idx_tuple}: got {val:.6f}, expected {ref_val:.6f}, diff={diff:.6f}"
             )
 
-        raise ValueError(
-            f"{num_failures} {name} are not close (rtol={rtol}, atol={atol})"
-        )
+        raise ValueError(f"{num_failures} {name} are not close (rtol={rtol}, atol={atol})")

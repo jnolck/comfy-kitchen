@@ -12,6 +12,7 @@ from tests.conftest import assert_values_close, get_capable_backends
 # Reference implementation
 # ---------------------------------------------------------------------------
 
+
 def _ref_adaln(x, scale, shift, eps=1e-6):
     return functional.layer_norm(x, x.shape[-1:], eps=eps) * (1 + scale) + shift
 
@@ -26,7 +27,7 @@ def _ref_rms_adaln(x, scale, shift, eps=1e-6):
 
 _DTYPES = [torch.float32, torch.float16, torch.bfloat16]
 _SHAPES = [
-    (2, 16, 64),    # small
+    (2, 16, 64),  # small
     (2, 256, 768),  # bert-like
     (1, 64, 3072),  # flux-like
 ]
@@ -44,8 +45,9 @@ def _scale_shift(shape, dtype, device):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestAdaLN:
-    @pytest.mark.parametrize("backend", ["cuda", "triton", "eager"])
+    @pytest.mark.parametrize("backend", ["hip", "triton", "eager"])
     @pytest.mark.parametrize("dtype", _DTYPES)
     @pytest.mark.parametrize("shape", _SHAPES)
     def test_forward(self, backend, dtype, shape, seed, cuda_available):
@@ -64,19 +66,18 @@ class TestAdaLN:
         if backend == "eager":
             ref = _ref_adaln(x, scale, shift, 1e-6)
         else:
-            ref = _ref_adaln(
-                x.float(), scale.float(), shift.float(), 1e-6
-            ).to(dtype)
+            ref = _ref_adaln(x.float(), scale.float(), shift.float(), 1e-6).to(dtype)
 
         rtol = 1e-2 if dtype != torch.float32 else 1e-4
         atol = 1e-2 if dtype != torch.float32 else 1e-5
 
         assert out.shape == x.shape
         assert out.dtype == dtype
-        assert_values_close(out.float(), ref.float(), rtol=rtol, atol=atol,
-                            name=f"adaln[{backend}/{dtype}]")
+        assert_values_close(
+            out.float(), ref.float(), rtol=rtol, atol=atol, name=f"adaln[{backend}/{dtype}]"
+        )
 
-    @pytest.mark.parametrize("backend", ["cuda", "triton"])
+    @pytest.mark.parametrize("backend", ["hip", "cuda", "triton"])
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
     def test_vs_eager(self, backend, dtype, seed, cuda_available):
         """Non-eager backends must match the appropriate dtype reference."""
@@ -93,9 +94,7 @@ class TestAdaLN:
         scale, shift = _scale_shift(shape, dtype, device)
 
         if dtype is torch.bfloat16:
-            ref = _ref_adaln(
-                x.float(), scale.float(), shift.float(), 1e-6
-            ).to(dtype)
+            ref = _ref_adaln(x.float(), scale.float(), shift.float(), 1e-6).to(dtype)
         else:
             with ck.use_backend("eager"):
                 ref = ck.adaln(x, scale, shift, 1e-6)
@@ -103,8 +102,13 @@ class TestAdaLN:
         with ck.use_backend(backend):
             out = ck.adaln(x, scale, shift, 1e-6)
 
-        assert_values_close(out.float(), ref.float(), rtol=1e-2, atol=1e-2,
-                            name=f"adaln[{backend} vs eager/{dtype}]")
+        assert_values_close(
+            out.float(),
+            ref.float(),
+            rtol=1e-2,
+            atol=1e-2,
+            name=f"adaln[{backend} vs eager/{dtype}]",
+        )
 
     def test_broadcast_scale_shift(self, seed, cuda_available):
         """Scale/shift of shape (B, 1, D) broadcast correctly over N tokens."""
@@ -124,8 +128,7 @@ class TestAdaLN:
         ref = _ref_adaln(x, scale, shift, 1e-6)
 
         assert out.shape == shape
-        assert_values_close(out, ref, rtol=1e-4, atol=1e-5,
-                            name="adaln[broadcast scale/shift]")
+        assert_values_close(out, ref, rtol=1e-4, atol=1e-5, name="adaln[broadcast scale/shift]")
 
     def test_same_scale_shift(self, seed, cuda_available):
         """scale=0, shift=0 should return plain layer norm."""
@@ -144,7 +147,7 @@ class TestAdaLN:
 
         assert_values_close(out, ref, rtol=1e-4, atol=1e-5, name="adaln[no-op scale/shift]")
 
-    @pytest.mark.parametrize("backend", ["cuda", "triton", "eager"])
+    @pytest.mark.parametrize("backend", ["hip", "cuda", "triton", "eager"])
     def test_contiguous_output(self, backend, cuda_available):
         """Output must always be contiguous."""
         device = "cuda" if cuda_available else "cpu"
@@ -162,7 +165,7 @@ class TestAdaLN:
 
 
 class TestRMSAdaLN:
-    @pytest.mark.parametrize("backend", ["cuda", "triton", "eager"])
+    @pytest.mark.parametrize("backend", ["hip", "cuda", "triton", "eager"])
     @pytest.mark.parametrize("dtype", _DTYPES)
     @pytest.mark.parametrize("shape", _SHAPES)
     def test_forward(self, backend, dtype, shape, seed, cuda_available):
@@ -181,19 +184,18 @@ class TestRMSAdaLN:
         if backend == "eager":
             ref = _ref_rms_adaln(x, scale, shift, 1e-6)
         else:
-            ref = _ref_rms_adaln(
-                x.float(), scale.float(), shift.float(), 1e-6
-            ).to(dtype)
+            ref = _ref_rms_adaln(x.float(), scale.float(), shift.float(), 1e-6).to(dtype)
 
         rtol = 1e-2 if dtype != torch.float32 else 1e-4
         atol = 1e-2 if dtype != torch.float32 else 1e-5
 
         assert out.shape == x.shape
         assert out.dtype == dtype
-        assert_values_close(out.float(), ref.float(), rtol=rtol, atol=atol,
-                            name=f"rms_adaln[{backend}/{dtype}]")
+        assert_values_close(
+            out.float(), ref.float(), rtol=rtol, atol=atol, name=f"rms_adaln[{backend}/{dtype}]"
+        )
 
-    @pytest.mark.parametrize("backend", ["cuda", "triton", "eager"])
+    @pytest.mark.parametrize("backend", ["hip", "cuda", "triton", "eager"])
     @pytest.mark.parametrize("batch", [1, 2, 3])
     def test_per_sample_modulation_broadcast(self, backend, batch, seed, cuda_available):
         """scale/shift of shape (B, 1, D) must broadcast per sample, not per row.
@@ -216,10 +218,11 @@ class TestRMSAdaLN:
             out = ck.rms_adaln(x, scale, shift, 1e-6)
         ref = _ref_rms_adaln(x, scale, shift, 1e-6)
 
-        assert_values_close(out, ref, rtol=1e-4, atol=1e-5,
-                            name=f"rms_adaln[{backend}/per-sample B={batch}]")
+        assert_values_close(
+            out, ref, rtol=1e-4, atol=1e-5, name=f"rms_adaln[{backend}/per-sample B={batch}]"
+        )
 
-    @pytest.mark.parametrize("backend", ["cuda", "triton", "eager"])
+    @pytest.mark.parametrize("backend", ["hip", "cuda", "triton", "eager"])
     def test_per_token_modulation(self, backend, seed, cuda_available):
         """Fully materialized per-token scale/shift (no broadcast) must also work."""
         device = "cuda" if cuda_available else "cpu"
@@ -236,10 +239,9 @@ class TestRMSAdaLN:
             out = ck.rms_adaln(x, scale, shift, 1e-6)
         ref = _ref_rms_adaln(x, scale, shift, 1e-6)
 
-        assert_values_close(out, ref, rtol=1e-4, atol=1e-5,
-                            name=f"rms_adaln[{backend}/per-token]")
+        assert_values_close(out, ref, rtol=1e-4, atol=1e-5, name=f"rms_adaln[{backend}/per-token]")
 
-    @pytest.mark.parametrize("backend", ["cuda", "triton", "eager"])
+    @pytest.mark.parametrize("backend", ["hip", "cuda", "triton", "eager"])
     @pytest.mark.parametrize("dim", [1, 31, 129, 4096])
     def test_odd_and_large_dims(self, backend, dim, seed, cuda_available):
         """Non-vectorizable and large hidden dims take the scalar tail / block loop."""
@@ -256,10 +258,9 @@ class TestRMSAdaLN:
             out = ck.rms_adaln(x, scale, shift, 1e-6)
         ref = _ref_rms_adaln(x, scale, shift, 1e-6)
 
-        assert_values_close(out, ref, rtol=1e-4, atol=1e-5,
-                            name=f"rms_adaln[{backend}/D={dim}]")
+        assert_values_close(out, ref, rtol=1e-4, atol=1e-5, name=f"rms_adaln[{backend}/D={dim}]")
 
-    @pytest.mark.parametrize("backend", ["cuda", "triton", "eager"])
+    @pytest.mark.parametrize("backend", ["hip", "cuda", "triton", "eager"])
     @pytest.mark.parametrize("rows", [512, 2048])
     def test_warp_and_block_kernel_paths(self, backend, rows, seed, cuda_available):
         """The CUDA backend switches kernels at N == 1024; cover both sides."""
@@ -276,8 +277,7 @@ class TestRMSAdaLN:
             out = ck.rms_adaln(x, scale, shift, 1e-6)
         ref = _ref_rms_adaln(x, scale, shift, 1e-6)
 
-        assert_values_close(out, ref, rtol=1e-4, atol=1e-5,
-                            name=f"rms_adaln[{backend}/N={rows}]")
+        assert_values_close(out, ref, rtol=1e-4, atol=1e-5, name=f"rms_adaln[{backend}/N={rows}]")
 
     def test_differs_from_layernorm_adaln(self, seed, cuda_available):
         """rms_adaln must not silently be adaln: a non-zero-mean row differs."""
@@ -293,10 +293,15 @@ class TestRMSAdaLN:
         ln_out = ck.adaln(x, scale, shift, 1e-6)
 
         assert not torch.allclose(rms_out, ln_out, rtol=1e-3, atol=1e-3)
-        assert_values_close(rms_out, _ref_rms_adaln(x, scale, shift, 1e-6),
-                            rtol=1e-4, atol=1e-5, name="rms_adaln[vs adaln]")
+        assert_values_close(
+            rms_out,
+            _ref_rms_adaln(x, scale, shift, 1e-6),
+            rtol=1e-4,
+            atol=1e-5,
+            name="rms_adaln[vs adaln]",
+        )
 
-    @pytest.mark.parametrize("backend", ["cuda", "triton", "eager"])
+    @pytest.mark.parametrize("backend", ["hip", "cuda", "triton", "eager"])
     def test_contiguous_output(self, backend, cuda_available):
         device = "cuda" if cuda_available else "cpu"
         capable = get_capable_backends("rms_adaln", device)
@@ -326,5 +331,4 @@ class TestRMSAdaLN:
         ref = _ref_rms_adaln(x, scale, shift, 1e-6)
 
         assert out.shape == x.shape
-        assert_values_close(out, ref, rtol=1e-4, atol=1e-5,
-                            name="rms_adaln[non-contiguous]")
+        assert_values_close(out, ref, rtol=1e-4, atol=1e-5, name="rms_adaln[non-contiguous]")

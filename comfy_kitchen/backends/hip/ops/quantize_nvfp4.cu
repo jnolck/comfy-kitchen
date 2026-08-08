@@ -317,11 +317,13 @@ __global__ void dequantize_nvfp4_kernel(const IType* const input, const float* g
         // Unpack and dequantize
         OType vals_output[kValsPerThread];
 
-        if (idx == 0)
-        {
-                printf("NVFP4 dequant: scale_byte=0x%02x, decode_scale=%f, global=%f\n", scale_byte,
-                       decode_scale, global_decode_scale);
-        }
+        // if (idx == 0)
+        // {
+        //         printf("NVFP4 dequant: scale_byte=0x%02x, decode_scale=%f, global=%f\n",
+        //         scale_byte,
+        //                decode_scale, global_decode_scale);
+        // }
+
         // __nv_cvt_fp4x2_to_halfraw2 returns: .x = low nibble value, .y = high nibble
         // value. HiFirst=true:  high nibble = even index (val0), low nibble = odd
         // index (val1) → .y=val0, .x=val1 HiFirst=false: high nibble = odd index

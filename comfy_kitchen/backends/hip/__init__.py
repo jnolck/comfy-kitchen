@@ -37,14 +37,14 @@ __all__ = [
     "apply_rope_split_half_",
     "apply_rope_split_half1",
     "apply_rope_split_half1_",
-    # "rms_rope",
-    # "rms_rope_",
-    # "rms_rope1",
-    # "rms_rope1_",
-    # "rms_rope_split_half",
-    # "rms_rope_split_half_",
-    # "rms_rope_split_half1",
-    # "rms_rope_split_half1_",
+    "rms_rope",
+    "rms_rope_",
+    "rms_rope1",
+    "rms_rope1_",
+    "rms_rope_split_half",
+    "rms_rope_split_half_",
+    "rms_rope_split_half1",
+    "rms_rope_split_half1_",
     "dequantize_nvfp4",
     "dequantize_per_tensor_fp8",
     "dequantize_int8_simple",
@@ -1491,6 +1491,7 @@ _CONVROT_FUSED_MAX_K = 16384
 # Set COMFY_KITCHEN_DISABLE_CUTLASS=1 to force the cuBLAS int8 GEMM + separate
 # dequant path (for benchmarking against the CUTLASS fused kernel).
 _DISABLE_CUTLASS_INT8 = os.environ.get("COMFY_KITCHEN_DISABLE_CUTLASS", "0") == "1"
+_DISABLE_CUTLASS_INT8 = True
 
 
 def quantize_int8_tensorwise(
@@ -2025,13 +2026,16 @@ def int8_linear(
             cublas_weight = weight
 
         out_int32 = torch.empty((m, padded_n), dtype=torch.int32, device=x.device)
+
         _C.cublas_gemm_int8(
             _wrap_for_dlpack(cublas_x),
+            # _wrap_for_dlpack(cublas_weight),
             _wrap_for_dlpack(cublas_weight),
             _wrap_for_dlpack(out_int32),
             _wrap_for_dlpack(get_cublas_workspace()),
             stream_ptr,
         )
+
         if padded_n != n:
             out_int32 = out_int32[:, :n].contiguous()
         _C.dequantize_int8_linear(
@@ -2043,7 +2047,6 @@ def int8_linear(
             output_dtype_code,
             stream_ptr,
         )
-
     return out if is_2d_output else out.reshape(*orig_shape[:-1], n)
 
 
@@ -2150,6 +2153,14 @@ def apply_rope1_(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
 def apply_rope(
     xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    if not hasattr(_apply_rope_cuda, "_debug_rope"):
+        _apply_rope_cuda._debug_rope = True
+        torch.cuda.synchronize()
+        from comfy_kitchen.backends.eager.rope import apply_rope as eager_rope
+
+        eager_out, eager_k = eager_rope(xq, xk, freqs_cis)
+        diff_q = (xq.float() - eager_out.float()).abs()
+        diff_k = (xk.float() - eager_k.float()).abs()
     return _apply_rope_cuda(xq, xk, freqs_cis, split_half=False, inplace=False)
 
 
@@ -3315,15 +3326,15 @@ def _build_constraints() -> dict:
 def _register():
     """Register CUDA backend with the global registry."""
     if not _EXT_AVAILABLE:
-        registry.mark_unavailable("cuda", _EXT_ERROR)
+        registry.mark_unavailable("hip", _EXT_ERROR)
         return
 
     if not torch.cuda.is_available():
-        registry.mark_unavailable("cuda", "CUDA not available on this system")
+        registry.mark_unavailable("hip", "CUDA not available on this system")
         return
 
     registry.register(
-        name="cuda",
+        name="hip",
         module=__import__(__name__, fromlist=__all__),
         capabilities=_build_constraints(),
     )

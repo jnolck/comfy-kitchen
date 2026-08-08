@@ -178,9 +178,9 @@ extern "C"
 }
 
 // Nanobind wrapper for quantize_per_tensor_fp8
-void quantize_per_tensor_fp8(nb::ndarray<nb : device::rocm> input,
-                             nb::ndarray<nb : device::rocm> scale,
-                             nb::ndarray<nb : device::rocm> output, int input_dtype_code,
+void quantize_per_tensor_fp8(nb::ndarray<nb::device::rocm> input,
+                             nb::ndarray<nb::device::rocm> scale,
+                             nb::ndarray<nb::device::rocm> output, int input_dtype_code,
                              int output_dtype_code, int64_t numel, uintptr_t stream_ptr)
 {
         // Validate input dtype code (0=float32, 1=float16, 2=bfloat16)
@@ -201,9 +201,9 @@ void quantize_per_tensor_fp8(nb::ndarray<nb : device::rocm> input,
 }
 
 // Nanobind wrapper for dequantize_per_tensor_fp8
-void dequantize_per_tensor_fp8(nb::ndarray<nb : device::rocm> input,
-                               nb::ndarray<nb : device::rocm> scale,
-                               nb::ndarray<nb : device::rocm> output, int input_dtype_code,
+void dequantize_per_tensor_fp8(nb::ndarray<nb::device::rocm> input,
+                               nb::ndarray<nb::device::rocm> scale,
+                               nb::ndarray<nb::device::rocm> output, int input_dtype_code,
                                int output_dtype_code, int64_t numel, uintptr_t stream_ptr)
 {
         // Validate input dtype code (5=float8_e4m3fn, 6=float8_e5m2)
@@ -226,9 +226,9 @@ void dequantize_per_tensor_fp8(nb::ndarray<nb : device::rocm> input,
                                      input_dtype_code, output_dtype_code, stream);
 }
 
-void stochastic_round_fp8(nb::ndarray<nb : device::rocm> rng_and_output,
-                          nb::ndarray<nb : device::rocm> input, int output_dtype_code,
-                          int64_t numel, uintptr_t stream_ptr)
+void stochastic_round_fp8(nb::ndarray<nb::device::rocm> rng_and_output,
+                          nb::ndarray<nb::device::rocm> input, int output_dtype_code, int64_t numel,
+                          uintptr_t stream_ptr)
 {
         int rng_dtype_code = map_dtype_to_code(rng_and_output.dtype());
         if (rng_dtype_code != 3)
@@ -254,14 +254,14 @@ void stochastic_round_fp8(nb::ndarray<nb : device::rocm> rng_and_output,
 }
 
 // Nanobind wrapper for cublas_gemm_blockwise_fp4
-void cublas_gemm_blockwise_fp4(nb::ndarray<uint8_t, nb::ndim<2>, nb : device::rocm> b,
-                               nb::ndarray<uint8_t, nb::ndim<2>, nb : device::rocm> block_scale_b,
-                               nb::ndarray<uint8_t, nb::ndim<2>, nb : device::rocm> a,
-                               nb::ndarray<uint8_t, nb::ndim<2>, nb : device::rocm> block_scale_a,
-                               nb::ndarray<nb : device::rocm> out, int out_dtype_code,
-                               nb::ndarray<nb : device::rocm> bias,
-                               nb::ndarray<nb : device::rocm> workspace, bool accumulate,
-                               nb::ndarray<float, nb : device::rocm> alpha, uintptr_t stream_ptr)
+void cublas_gemm_blockwise_fp4(nb::ndarray<uint8_t, nb::ndim<2>, nb::device::rocm> b,
+                               nb::ndarray<uint8_t, nb::ndim<2>, nb::device::rocm> block_scale_b,
+                               nb::ndarray<uint8_t, nb::ndim<2>, nb::device::rocm> a,
+                               nb::ndarray<uint8_t, nb::ndim<2>, nb::device::rocm> block_scale_a,
+                               nb::ndarray<nb::device::rocm> out, int out_dtype_code,
+                               nb::ndarray<nb::device::rocm> bias,
+                               nb::ndarray<nb::device::rocm> workspace, bool accumulate,
+                               nb::ndarray<float, nb::device::rocm> alpha, uintptr_t stream_ptr)
 {
         auto& runtime = comfy::HipblasLtRuntime::instance();
         if (!runtime.is_available())
@@ -302,10 +302,10 @@ void cublas_gemm_blockwise_fp4(nb::ndarray<uint8_t, nb::ndim<2>, nb : device::ro
 }
 
 // Nanobind wrapper for quantize_nvfp4
-void quantize_nvfp4(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                    nb::ndarray<nb : device::rocm> global_scale,
-                    nb::ndarray<nb : device::rocm> output,
-                    nb::ndarray<nb : device::rocm> block_scales, float epsilon, bool pad_16x,
+void quantize_nvfp4(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                    nb::ndarray<nb::device::rocm> global_scale,
+                    nb::ndarray<nb::device::rocm> output,
+                    nb::ndarray<nb::device::rocm> block_scales, float epsilon, bool pad_16x,
                     bool hi_first, uintptr_t stream_ptr)
 {
         // Get input dimensions (orig_rows, orig_cols)
@@ -339,10 +339,10 @@ void quantize_nvfp4(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
 }
 
 // Nanobind wrapper for dequantize_nvfp4
-void dequantize_nvfp4(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                      nb::ndarray<nb : device::rocm> global_scale,
-                      nb::ndarray<nb : device::rocm> block_scales,
-                      nb::ndarray<nb::ndim<2>, nb : device::rocm> output, int output_dtype_code,
+void dequantize_nvfp4(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                      nb::ndarray<nb::device::rocm> global_scale,
+                      nb::ndarray<nb::device::rocm> block_scales,
+                      nb::ndarray<nb::ndim<2>, nb::device::rocm> output, int output_dtype_code,
                       bool hi_first, uintptr_t stream_ptr)
 {
         // Get output dimensions (should match input logical dimensions)
@@ -364,9 +364,9 @@ void dequantize_nvfp4(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
 }
 
 // Nanobind wrapper for quantize_mxfp8
-// void quantize_mxfp8(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-//                     nb::ndarray<nb : device::rocm> output,
-//                     nb::ndarray<nb : device::rocm> block_scales, bool pad_32x, uintptr_t
+// void quantize_mxfp8(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+//                     nb::ndarray<nb::device::rocm> output,
+//                     nb::ndarray<nb::device::rocm> block_scales, bool pad_32x, uintptr_t
 //                     stream_ptr)
 // {
 //         // Get input dimensions (orig_rows, orig_cols)
@@ -399,8 +399,8 @@ void dequantize_nvfp4(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
 // }
 
 // Nanobind wrapper for apply_rope (handles both single tensor and q/k pair)
-void apply_rope(nb::ndarray<nb : device::rocm> xq, nb::ndarray<nb : device::rocm> freqs,
-                nb::ndarray<nb : device::rocm> xq_out, nb::object xk_obj, nb::object xk_out_obj,
+void apply_rope(nb::ndarray<nb::device::rocm> xq, nb::ndarray<nb::device::rocm> freqs,
+                nb::ndarray<nb::device::rocm> xq_out, nb::object xk_obj, nb::object xk_out_obj,
                 uintptr_t stream_ptr, bool split_half = false)
 {
         if (xq.ndim() != 4 || freqs.ndim() != 6)
@@ -453,8 +453,8 @@ void apply_rope(nb::ndarray<nb : device::rocm> xq, nb::ndarray<nb : device::rocm
 
         if (has_xk)
         {
-                auto xk = nb::cast<nb::ndarray<nb : device::rocm>>(xk_obj);
-                auto xk_out = nb::cast<nb::ndarray<nb : device::rocm>>(xk_out_obj);
+                auto xk = nb::cast<nb::ndarray<nb::device::rocm>>(xk_obj);
+                auto xk_out = nb::cast<nb::ndarray<nb::device::rocm>>(xk_out_obj);
 
                 if (xk.ndim() != 4 || xk.shape(0) != batch || xk.shape(1) != dim1 ||
                     xk.shape(2) != dim2 || xk.shape(3) != head_dim)
@@ -523,10 +523,10 @@ void apply_rope(nb::ndarray<nb : device::rocm> xq, nb::ndarray<nb : device::rocm
 }
 
 // Nanobind wrapper for paired fused RMSNorm + RoPE.
-void rms_rope(nb::ndarray<nb : device::rocm> q, nb::ndarray<nb : device::rocm> k,
-              nb::ndarray<nb : device::rocm> freqs, nb::ndarray<nb : device::rocm> q_scale,
-              nb::ndarray<nb : device::rocm> k_scale, nb::ndarray<nb : device::rocm> q_out,
-              nb::ndarray<nb : device::rocm> k_out, float epsilon, uintptr_t stream_ptr,
+void rms_rope(nb::ndarray<nb::device::rocm> q, nb::ndarray<nb::device::rocm> k,
+              nb::ndarray<nb::device::rocm> freqs, nb::ndarray<nb::device::rocm> q_scale,
+              nb::ndarray<nb::device::rocm> k_scale, nb::ndarray<nb::device::rocm> q_out,
+              nb::ndarray<nb::device::rocm> k_out, float epsilon, uintptr_t stream_ptr,
               bool split_half = false, int64_t rot_dim = 0)
 {
         if (q.ndim() != 4 || k.ndim() != 4 || q_out.ndim() != 4 || k_out.ndim() != 4)
@@ -605,8 +605,8 @@ void rms_rope(nb::ndarray<nb : device::rocm> q, nb::ndarray<nb : device::rocm> k
 }
 
 // Nanobind wrapper for single-tensor fused RMSNorm + RoPE.
-void rms_rope1(nb::ndarray<nb : device::rocm> q, nb::ndarray<nb : device::rocm> freqs,
-               nb::ndarray<nb : device::rocm> q_scale, nb::ndarray<nb : device::rocm> q_out,
+void rms_rope1(nb::ndarray<nb::device::rocm> q, nb::ndarray<nb::device::rocm> freqs,
+               nb::ndarray<nb::device::rocm> q_scale, nb::ndarray<nb::device::rocm> q_out,
                float epsilon, uintptr_t stream_ptr, bool split_half = false)
 {
         if (q.ndim() != 4 || q_out.ndim() != 4)
@@ -680,12 +680,12 @@ void rms_rope1(nb::ndarray<nb : device::rocm> q, nb::ndarray<nb : device::rocm> 
 // }
 //
 // void svdquant_quantize_w4a4(
-//     nb::ndarray<nb : device::rocm> x,          // (M, K) bf16/fp16 — pre-shifted if unsigned path
-//     nb::ndarray<nb : device::rocm> smooth,     // (K,)
-//     nb::ndarray<nb : device::rocm> lora_down,  // (K, R)
-//     nb::ndarray<nb : device::rocm> q_x,        // (M_pad, K/2) int8
-//     nb::ndarray<nb : device::rocm> ascales,    // (K/G, M_pad)
-//     nb::ndarray<nb : device::rocm> lora_act,   // (M_pad, R) fp32
+//     nb::ndarray<nb::device::rocm> x,          // (M, K) bf16/fp16 — pre-shifted if unsigned path
+//     nb::ndarray<nb::device::rocm> smooth,     // (K,)
+//     nb::ndarray<nb::device::rocm> lora_down,  // (K, R)
+//     nb::ndarray<nb::device::rocm> q_x,        // (M_pad, K/2) int8
+//     nb::ndarray<nb::device::rocm> ascales,    // (K/G, M_pad)
+//     nb::ndarray<nb::device::rocm> lora_act,   // (M_pad, R) fp32
 //     bool act_unsigned, uintptr_t stream_ptr)
 // {
 //         int M = static_cast<int>(x.shape(0));
@@ -701,14 +701,14 @@ void rms_rope1(nb::ndarray<nb : device::rocm> q, nb::ndarray<nb : device::rocm> 
 //                                              input_code, static_cast<int>(act_unsigned), stream);
 // }
 //
-// void svdquant_scaled_mm_w4a4(nb::ndarray<nb : device::rocm> act,          // (M, K/2) int8
-//                              nb::ndarray<nb : device::rocm> wgt,          // (N, K/2) int8
-//                              nb::ndarray<nb : device::rocm> ascales,      // (K/G, M)
-//                              nb::ndarray<nb : device::rocm> wscales,      // (K/G, N)
-//                              nb::ndarray<nb : device::rocm> lora_act_in,  // (M, R) fp32
-//                              nb::ndarray<nb : device::rocm> lora_up,      // (N, R)
-//                              nb::ndarray<nb : device::rocm> bias,         // (N,) or empty
-//                              nb::ndarray<nb : device::rocm> out,          // (M, N)
+// void svdquant_scaled_mm_w4a4(nb::ndarray<nb::device::rocm> act,          // (M, K/2) int8
+//                              nb::ndarray<nb::device::rocm> wgt,          // (N, K/2) int8
+//                              nb::ndarray<nb::device::rocm> ascales,      // (K/G, M)
+//                              nb::ndarray<nb::device::rocm> wscales,      // (K/G, N)
+//                              nb::ndarray<nb::device::rocm> lora_act_in,  // (M, R) fp32
+//                              nb::ndarray<nb::device::rocm> lora_up,      // (N, R)
+//                              nb::ndarray<nb::device::rocm> bias,         // (N,) or empty
+//                              nb::ndarray<nb::device::rocm> out,          // (M, N)
 //                              bool act_unsigned, bool fast_accum, bool shared_scale, bool
 //                              fuse_lora, uintptr_t stream_ptr)
 // {
@@ -754,11 +754,11 @@ void rms_rope1(nb::ndarray<nb : device::rocm> q, nb::ndarray<nb : device::rocm> 
 // // ---------------------------------------------------------------------------
 // // AWQ W4A16 — int4 weight, fp16/bf16 activation matmul. See ops/awq_w4a16.cu.
 // // ---------------------------------------------------------------------------
-// void awq_w4a16(nb::ndarray<nb : device::rocm> x,        // (M, K) bf16/fp16
-//                nb::ndarray<nb : device::rocm> qweight,  // (N, K/2) int8 packed uint4
-//                nb::ndarray<nb : device::rocm> wscales,  // (K/G, N)
-//                nb::ndarray<nb : device::rocm> wzeros,   // (K/G, N)
-//                nb::ndarray<nb : device::rocm> out,      // (M, N)
+// void awq_w4a16(nb::ndarray<nb::device::rocm> x,        // (M, K) bf16/fp16
+//                nb::ndarray<nb::device::rocm> qweight,  // (N, K/2) int8 packed uint4
+//                nb::ndarray<nb::device::rocm> wscales,  // (K/G, N)
+//                nb::ndarray<nb::device::rocm> wzeros,   // (K/G, N)
+//                nb::ndarray<nb::device::rocm> out,      // (M, N)
 //                int group_size, uintptr_t stream_ptr)
 // {
 //         const int M = static_cast<int>(x.shape(0));
@@ -777,8 +777,8 @@ void rms_rope1(nb::ndarray<nb : device::rocm> q, nb::ndarray<nb : device::rocm> 
 // }
 
 // Nanobind wrapper for fused AdaLN (LayerNorm statistics)
-void adaln(nb::ndarray<nb : device::rocm> x, nb::ndarray<nb : device::rocm> scale,
-           nb::ndarray<nb : device::rocm> shift, nb::ndarray<nb : device::rocm> out, int64_t N,
+void adaln(nb::ndarray<nb::device::rocm> x, nb::ndarray<nb::device::rocm> scale,
+           nb::ndarray<nb::device::rocm> shift, nb::ndarray<nb::device::rocm> out, int64_t N,
            int64_t D, int64_t scale_group, int64_t shift_group, float eps, int dtype_code,
            uintptr_t stream_ptr)
 {
@@ -788,8 +788,8 @@ void adaln(nb::ndarray<nb : device::rocm> x, nb::ndarray<nb : device::rocm> scal
 }
 
 // Nanobind wrapper for fused AdaLN with RMSNorm statistics
-void rms_adaln(nb::ndarray<nb : device::rocm> x, nb::ndarray<nb : device::rocm> scale,
-               nb::ndarray<nb : device::rocm> shift, nb::ndarray<nb : device::rocm> out, int64_t N,
+void rms_adaln(nb::ndarray<nb::device::rocm> x, nb::ndarray<nb::device::rocm> scale,
+               nb::ndarray<nb::device::rocm> shift, nb::ndarray<nb::device::rocm> out, int64_t N,
                int64_t D, int64_t scale_group, int64_t shift_group, float eps, int dtype_code,
                uintptr_t stream_ptr)
 {
@@ -968,10 +968,10 @@ extern "C"
 }
 
 // Nanobind wrapper for cublas_gemm_int8
-void cublas_gemm_int8(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> a,
-                      nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> b,
-                      nb::ndarray<int32_t, nb::ndim<2>, nb : device::rocm> c,
-                      nb::ndarray<nb : device::rocm> workspace, uintptr_t stream_ptr)
+void cublas_gemm_int8(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> a,
+                      nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> b,
+                      nb::ndarray<int32_t, nb::ndim<2>, nb::device::rocm> c,
+                      nb::ndarray<nb::device::rocm> workspace, uintptr_t stream_ptr)
 {
         auto& runtime = comfy::HipblasLtRuntime::instance();
         if (!runtime.is_available())
@@ -1002,9 +1002,9 @@ void cublas_gemm_int8(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> a,
                                        stream);
 }
 
-void quantize_int8_rowwise(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                           nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> output,
-                           nb::ndarray<float, nb::ndim<2>, nb : device::rocm> scales,
+void quantize_int8_rowwise(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                           nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> output,
+                           nb::ndarray<float, nb::ndim<2>, nb::device::rocm> scales,
                            bool stochastic, uint64_t seed, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1029,9 +1029,9 @@ void quantize_int8_rowwise(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
                                             input_dtype_code, stochastic, seed, stream);
 }
 
-void quantize_int4_rowwise(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                           nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> output,
-                           nb::ndarray<float, nb::ndim<2>, nb : device::rocm> scales,
+void quantize_int4_rowwise(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                           nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> output,
+                           nb::ndarray<float, nb::ndim<2>, nb::device::rocm> scales,
                            bool stochastic, uint64_t seed, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1059,9 +1059,9 @@ void quantize_int4_rowwise(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
                                             input_dtype_code, stochastic, seed, stream);
 }
 
-void quantize_int4_rowwise_convrot64(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                                     nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> output,
-                                     nb::ndarray<float, nb::ndim<2>, nb : device::rocm> scales,
+void quantize_int4_rowwise_convrot64(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                                     nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> output,
+                                     nb::ndarray<float, nb::ndim<2>, nb::device::rocm> scales,
                                      int group_size, bool stochastic, uint64_t seed,
                                      uintptr_t stream_ptr)
 {
@@ -1098,9 +1098,9 @@ void quantize_int4_rowwise_convrot64(nb::ndarray<nb::ndim<2>, nb : device::rocm>
 }
 
 void quantize_int4_rowwise_convrot64_to_int8(
-    nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-    nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> output,
-    nb::ndarray<float, nb::ndim<2>, nb : device::rocm> scales, int group_size, bool stochastic,
+    nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+    nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> output,
+    nb::ndarray<float, nb::ndim<2>, nb::device::rocm> scales, int group_size, bool stochastic,
     uint64_t seed, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1133,9 +1133,9 @@ void quantize_int4_rowwise_convrot64_to_int8(
             input_dtype_code, stochastic, seed, stream);
 }
 
-void dequantize_int4_convrot64(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> input,
-                               nb::ndarray<float, nb::ndim<1>, nb : device::rocm> scales,
-                               nb::ndarray<nb::ndim<2>, nb : device::rocm> output, int group_size,
+void dequantize_int4_convrot64(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> input,
+                               nb::ndarray<float, nb::ndim<1>, nb::device::rocm> scales,
+                               nb::ndarray<nb::ndim<2>, nb::device::rocm> output, int group_size,
                                uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1172,12 +1172,12 @@ void dequantize_int4_convrot64(nb::ndarray<int8_t, nb::ndim<2>, nb : device::roc
                                                 output_dtype_code, stream);
 }
 
-void int4_linear(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> act,
-                 nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> weight,
-                 nb::ndarray<float, nb : device::rocm> x_scales,
-                 nb::ndarray<float, nb : device::rocm> weight_scales,
-                 nb::ndarray<nb : device::rocm> bias,
-                 nb::ndarray<nb::ndim<2>, nb : device::rocm> output, int output_dtype_code,
+void int4_linear(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> act,
+                 nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> weight,
+                 nb::ndarray<float, nb::device::rocm> x_scales,
+                 nb::ndarray<float, nb::device::rocm> weight_scales,
+                 nb::ndarray<nb::device::rocm> bias,
+                 nb::ndarray<nb::ndim<2>, nb::device::rocm> output, int output_dtype_code,
                  uintptr_t stream_ptr)
 {
         const int64_t M = act.shape(0);
@@ -1236,8 +1236,8 @@ void int4_linear(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> act,
                                   has_bias, output_dtype_code, bias_dtype_code, stream);
 }
 
-void unpack_int4_to_int8(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> input,
-                         nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> output,
+void unpack_int4_to_int8(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> input,
+                         nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> output,
                          uintptr_t stream_ptr)
 {
         const int64_t rows = input.shape(0);
@@ -1250,12 +1250,12 @@ void unpack_int4_to_int8(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> inp
         launch_unpack_int4_to_int8_kernel(input.data(), output.data(), rows, K_half, stream);
 }
 
-void int4_weight_int8_act_gemv_dequant(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> input,
-                                       nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> weight,
-                                       nb::ndarray<float, nb::ndim<2>, nb : device::rocm> x_scales,
-                                       nb::ndarray<float, nb : device::rocm> weight_scales,
-                                       nb::ndarray<nb : device::rocm> bias,
-                                       nb::ndarray<nb::ndim<2>, nb : device::rocm> output,
+void int4_weight_int8_act_gemv_dequant(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> input,
+                                       nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> weight,
+                                       nb::ndarray<float, nb::ndim<2>, nb::device::rocm> x_scales,
+                                       nb::ndarray<float, nb::device::rocm> weight_scales,
+                                       nb::ndarray<nb::device::rocm> bias,
+                                       nb::ndarray<nb::ndim<2>, nb::device::rocm> output,
                                        int output_dtype_code, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1303,14 +1303,14 @@ void int4_weight_int8_act_gemv_dequant(nb::ndarray<int8_t, nb::ndim<2>, nb : dev
 }
 
 void int4_weight_int8_act_gemm_dequant_chunked(
-    nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> input,
-    nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> weight,
-    nb::ndarray<float, nb::ndim<2>, nb : device::rocm> x_scales,
-    nb::ndarray<float, nb : device::rocm> weight_scales, nb::ndarray<nb : device::rocm> bias,
-    nb::ndarray<nb::ndim<2>, nb : device::rocm> output,
-    nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> weight_workspace,
-    nb::ndarray<int32_t, nb::ndim<2>, nb : device::rocm> acc_workspace,
-    nb::ndarray<uint8_t, nb : device::rocm> cublas_workspace, int64_t chunk_cols,
+    nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> input,
+    nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> weight,
+    nb::ndarray<float, nb::ndim<2>, nb::device::rocm> x_scales,
+    nb::ndarray<float, nb::device::rocm> weight_scales, nb::ndarray<nb::device::rocm> bias,
+    nb::ndarray<nb::ndim<2>, nb::device::rocm> output,
+    nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> weight_workspace,
+    nb::ndarray<int32_t, nb::ndim<2>, nb::device::rocm> acc_workspace,
+    nb::ndarray<uint8_t, nb::device::rocm> cublas_workspace, int64_t chunk_cols,
     bool allow_sm80_cutlass, int output_dtype_code, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1551,9 +1551,9 @@ void int4_weight_int8_act_gemm_dequant_chunked(
 //         stream);
 // }
 
-void quantize_int8_rowwise_convrot(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                                   nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> output,
-                                   nb::ndarray<float, nb::ndim<2>, nb : device::rocm> scales,
+void quantize_int8_rowwise_convrot(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                                   nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> output,
+                                   nb::ndarray<float, nb::ndim<2>, nb::device::rocm> scales,
                                    int64_t group_size, bool stochastic, uint64_t seed,
                                    uintptr_t stream_ptr)
 {
@@ -1581,8 +1581,8 @@ void quantize_int8_rowwise_convrot(nb::ndarray<nb::ndim<2>, nb : device::rocm> i
                                                     input_dtype_code, stochastic, seed, stream);
 }
 
-void rotate_int8_convrot_weight(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                                nb::ndarray<nb::ndim<2>, nb : device::rocm> output,
+void rotate_int8_convrot_weight(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                                nb::ndarray<nb::ndim<2>, nb::device::rocm> output,
                                 int64_t group_size, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1606,11 +1606,11 @@ void rotate_int8_convrot_weight(nb::ndarray<nb::ndim<2>, nb : device::rocm> inpu
                                                  output_dtype_code, stream);
 }
 
-void quantize_int8_convrot_staged(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                                  nb::ndarray<nb::ndim<2>, nb : device::rocm> rotated,
-                                  nb::ndarray<float, nb::ndim<2>, nb : device::rocm> partial_absmax,
-                                  nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> output,
-                                  nb::ndarray<float, nb::ndim<2>, nb : device::rocm> scales,
+void quantize_int8_convrot_staged(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                                  nb::ndarray<nb::ndim<2>, nb::device::rocm> rotated,
+                                  nb::ndarray<float, nb::ndim<2>, nb::device::rocm> partial_absmax,
+                                  nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> output,
+                                  nb::ndarray<float, nb::ndim<2>, nb::device::rocm> scales,
                                   int64_t group_size, bool stochastic, uint64_t seed,
                                   uintptr_t stream_ptr)
 {
@@ -1648,9 +1648,9 @@ void quantize_int8_convrot_staged(nb::ndarray<nb::ndim<2>, nb : device::rocm> in
             stream);
 }
 
-void quantize_int8_rowwise_convrot64(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                                     nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> output,
-                                     nb::ndarray<float, nb::ndim<2>, nb : device::rocm> scales,
+void quantize_int8_rowwise_convrot64(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                                     nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> output,
+                                     nb::ndarray<float, nb::ndim<2>, nb::device::rocm> scales,
                                      int64_t group_size, bool stochastic, int64_t act_code,
                                      uint64_t seed, uintptr_t stream_ptr)
 {
@@ -1681,11 +1681,11 @@ void quantize_int8_rowwise_convrot64(nb::ndarray<nb::ndim<2>, nb : device::rocm>
             input_dtype_code, stochastic, static_cast<int>(act_code), seed, stream);
 }
 
-void dequantize_int8_linear(nb::ndarray<int32_t, nb::ndim<2>, nb : device::rocm> input,
-                            nb::ndarray<float, nb::ndim<2>, nb : device::rocm> x_scales,
-                            nb::ndarray<float, nb : device::rocm> weight_scales,
-                            nb::ndarray<nb : device::rocm> bias,
-                            nb::ndarray<nb::ndim<2>, nb : device::rocm> output,
+void dequantize_int8_linear(nb::ndarray<int32_t, nb::ndim<2>, nb::device::rocm> input,
+                            nb::ndarray<float, nb::ndim<2>, nb::device::rocm> x_scales,
+                            nb::ndarray<float, nb::device::rocm> weight_scales,
+                            nb::ndarray<nb::device::rocm> bias,
+                            nb::ndarray<nb::ndim<2>, nb::device::rocm> output,
                             int output_dtype_code, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1726,12 +1726,12 @@ void dequantize_int8_linear(nb::ndarray<int32_t, nb::ndim<2>, nb : device::rocm>
                                              output_dtype_code, bias_dtype_code, stream);
 }
 
-void int8_gemv_dequant(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> input,
-                       nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> weight,
-                       nb::ndarray<float, nb::ndim<2>, nb : device::rocm> x_scales,
-                       nb::ndarray<float, nb : device::rocm> weight_scales,
-                       nb::ndarray<nb : device::rocm> bias,
-                       nb::ndarray<nb::ndim<2>, nb : device::rocm> output, int output_dtype_code,
+void int8_gemv_dequant(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> input,
+                       nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> weight,
+                       nb::ndarray<float, nb::ndim<2>, nb::device::rocm> x_scales,
+                       nb::ndarray<float, nb::device::rocm> weight_scales,
+                       nb::ndarray<nb::device::rocm> bias,
+                       nb::ndarray<nb::ndim<2>, nb::device::rocm> output, int output_dtype_code,
                        uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1781,13 +1781,13 @@ void int8_gemv_dequant(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> input
                                         output_dtype_code, bias_dtype_code, stream);
 }
 
-void int8_linear_m1(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
-                    nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> q_scratch,
-                    nb::ndarray<float, nb::ndim<2>, nb : device::rocm> x_scales,
-                    nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> weight,
-                    nb::ndarray<float, nb : device::rocm> weight_scales,
-                    nb::ndarray<nb : device::rocm> bias,
-                    nb::ndarray<nb::ndim<2>, nb : device::rocm> output, int output_dtype_code,
+void int8_linear_m1(nb::ndarray<nb::ndim<2>, nb::device::rocm> input,
+                    nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> q_scratch,
+                    nb::ndarray<float, nb::ndim<2>, nb::device::rocm> x_scales,
+                    nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> weight,
+                    nb::ndarray<float, nb::device::rocm> weight_scales,
+                    nb::ndarray<nb::device::rocm> bias,
+                    nb::ndarray<nb::ndim<2>, nb::device::rocm> output, int output_dtype_code,
                     bool convrot, int group_size, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);
@@ -1864,10 +1864,10 @@ void int8_linear_m1(nb::ndarray<nb::ndim<2>, nb : device::rocm> input,
                                         output_dtype_code, bias_dtype_code, stream);
 }
 
-void dequantize_int8_simple(nb::ndarray<int8_t, nb : device::rocm> input,
-                            nb::ndarray<float, nb : device::rocm> scale,
-                            nb::ndarray<nb : device::rocm> output, int64_t inner_dim,
-                            int scale_mode, uintptr_t stream_ptr)
+void dequantize_int8_simple(nb::ndarray<int8_t, nb::device::rocm> input,
+                            nb::ndarray<float, nb::device::rocm> scale,
+                            nb::ndarray<nb::device::rocm> output, int64_t inner_dim, int scale_mode,
+                            uintptr_t stream_ptr)
 {
         if (output.size() != input.size())
         {
@@ -1899,9 +1899,9 @@ void dequantize_int8_simple(nb::ndarray<int8_t, nb : device::rocm> input,
                                              scale_mode, output_dtype_code, stream);
 }
 
-void dequantize_int8_convrot_weight(nb::ndarray<int8_t, nb::ndim<2>, nb : device::rocm> input,
-                                    nb::ndarray<float, nb : device::rocm> scale,
-                                    nb::ndarray<nb::ndim<2>, nb : device::rocm> output,
+void dequantize_int8_convrot_weight(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> input,
+                                    nb::ndarray<float, nb::device::rocm> scale,
+                                    nb::ndarray<nb::ndim<2>, nb::device::rocm> output,
                                     int64_t group_size, uintptr_t stream_ptr)
 {
         const int64_t M = input.shape(0);

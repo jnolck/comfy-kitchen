@@ -1292,10 +1292,15 @@ __global__ void int4_linear_kernel(const int8_t* __restrict__ act,
         const int num_groups = K / kGroupSize;
 
         // Shared memory - unpacked int8
-        __shared__ alignas(16) int8_t smem_A[kBlockM * kBlockKInt8];
-        __shared__ alignas(16) int8_t smem_B[kBlockN * kBlockKInt8];
-        __shared__ alignas(16) int32_t smem_acc[kBlockM * kBlockN];
-        __shared__ alignas(16) float acc_fp32[kBlockM * kBlockN];
+        // __shared__ alignas(16) int8_t smem_A[kBlockM * kBlockKInt8];
+        // __shared__ alignas(16) int8_t smem_B[kBlockN * kBlockKInt8];
+        // __shared__ alignas(16) int32_t smem_acc[kBlockM * kBlockN];
+        // __shared__ alignas(16) float acc_fp32[kBlockM * kBlockN];
+
+        __shared__ int8_t smem_A[kBlockM * kBlockKInt8] __attribute__((aligned(16)));
+        __shared__ int8_t smem_B[kBlockN * kBlockKInt8] __attribute__((aligned(16)));
+        __shared__ int32_t smem_acc[kBlockM * kBlockN] __attribute__((aligned(16)));
+        __shared__ float acc_fp32[kBlockM * kBlockN] __attribute__((aligned(16)));
 
         // Initialize accumulator
         for (int i = threadIdx.x; i < kBlockM * kBlockN; i += kThreadsPerBlock)

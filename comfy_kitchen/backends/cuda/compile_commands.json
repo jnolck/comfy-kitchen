@@ -1,7 +1,0 @@
-[
-  {
-    "directory": "/path/to/comfy-kitchen",
-    "command": "hipcc -I/opt/rocm/include -I$(python -c 'import torch; print(torch.utils.cmake_prefix_path)')/include -x hip -std=c++17 -c comfy_kitchen/backends/cuda/ops/int8_linear.cu",
-    "file": "comfy_kitchen/backends/cuda/ops/int8_linear.cu"
-  }
-]

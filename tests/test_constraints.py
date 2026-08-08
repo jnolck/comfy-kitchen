@@ -97,16 +97,12 @@ class TestParamConstraint:
         assert constraint.check_device(tensor, frozenset({"cuda", "cpu"})) is False
 
     def test_shape_rules_pass(self):
-        constraint = ParamConstraint(
-            shape_rules=(ExactDims(2), DivisibleBy(dim=1, factor=16))
-        )
+        constraint = ParamConstraint(shape_rules=(ExactDims(2), DivisibleBy(dim=1, factor=16)))
         tensor = torch.randn(8, 32)
         assert constraint.check_shape(tensor) is True
 
     def test_shape_rules_fail(self):
-        constraint = ParamConstraint(
-            shape_rules=(ExactDims(2), DivisibleBy(dim=1, factor=16))
-        )
+        constraint = ParamConstraint(shape_rules=(ExactDims(2), DivisibleBy(dim=1, factor=16)))
         tensor = torch.randn(8, 30)  # Not divisible by 16
         assert constraint.check_shape(tensor) is False
 
@@ -200,9 +196,7 @@ class TestRegistryConstraintValidation:
             "scale": torch.tensor([1.0], dtype=torch.float32, device=device),
             "output_type": torch.float8_e4m3fn,
         }
-        result = ck.registry.validate_backend_for_call(
-            "eager", "quantize_per_tensor_fp8", kwargs
-        )
+        result = ck.registry.validate_backend_for_call("eager", "quantize_per_tensor_fp8", kwargs)
         assert result.success is True
 
     def test_validate_backend_wrong_dtype(self, device):
@@ -212,9 +206,7 @@ class TestRegistryConstraintValidation:
             "scale": torch.tensor([1.0], dtype=torch.float32, device=device),
             "output_type": torch.float8_e4m3fn,
         }
-        result = ck.registry.validate_backend_for_call(
-            "eager", "quantize_per_tensor_fp8", kwargs
-        )
+        result = ck.registry.validate_backend_for_call("eager", "quantize_per_tensor_fp8", kwargs)
         assert result.success is False
 
     def test_get_capable_backend_fallback(self, device):
@@ -227,7 +219,7 @@ class TestRegistryConstraintValidation:
         }
         backend = ck.registry.get_capable_backend("quantize_per_tensor_fp8", kwargs)
         assert backend is not None
-        assert backend in ["cuda", "triton", "eager"]
+        assert backend in ["hip", "cuda", "triton", "eager"]
 
     def test_get_capable_backend_no_match(self, device):
         """Test NoCapableBackendError when no backend can handle the call."""
@@ -284,11 +276,11 @@ class TestIntegrationWithBackends:
         scale = torch.tensor([1.0], dtype=torch.float32, device="cpu")
 
         backends = ck.list_backends()
-        if not backends.get("cuda", {}).get("available", False):
+        if not backends.get("hip", {}).get("available", False):
             pytest.skip("CUDA backend not available")
 
         result = ck.registry.validate_backend_for_call(
-            "cuda",
+            "hip",
             "quantize_per_tensor_fp8",
             {"x": x, "scale": scale, "output_type": torch.float8_e4m3fn},
         )
