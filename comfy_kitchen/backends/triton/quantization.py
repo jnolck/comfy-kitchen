@@ -17,6 +17,7 @@ import torch
 
 import triton
 import triton.language as tl
+from comfy_kitchen.backends._activations import apply_input_act as _apply_input_act
 from comfy_kitchen.float_utils import (
     F8_E4M3_MAX,
     F8_E5M2_MAX,
@@ -773,6 +774,7 @@ def _quantize_rowwise_kernel(
     s_ptr,      # Scale pointer (FP32)
     n_elements, # Number of columns
     block_size: tl.constexpr,
+    input_dtype_code: tl.constexpr,
 ):
     # Row index we are processing
     row_idx = tl.program_id(0)
@@ -798,28 +800,15 @@ def _quantize_rowwise_kernel(
     scale = tl.maximum(max_val / 127.0, 1e-30)
 
     # 3. Quantize
-    q_f = x / scale
+    if input_dtype_code == 1:
+        q_f = (x / scale.to(tl.float16)).to(tl.float16)
+    elif input_dtype_code == 2:
+        q_f = (x / scale.to(tl.bfloat16)).to(tl.bfloat16)
+    else:
+        q_f = x / scale
 
-    # Round half-to-even (emulates libdevice.rint for HIP compat)
-    # Triton 3.6.0 HIP backend lacks rint, math.round, and integer clamp
-    floor_val = tl.floor(q_f)
-    frac = q_f - floor_val
-    
-    # Standard round: floor(x + 0.5)
-    standard = tl.floor(q_f + 0.5)
-    
-    # For exactly .5: round to nearest even
-    # floor_val % 2.0 == 1.0 means odd floor, so add 1 to round up to even
-    is_odd = tl.abs(floor_val) % 2.0 == 1.0
-    q_i = tl.where(
-        frac == 0.5,
-        floor_val + is_odd,
-        standard
-    )
-
-    # Convert to int for storage
-    q_i = tl.clamp(q_i, -128.0, 127.0)
-    q_i = q_i.to(tl.int32)
+    # Round and Clamp
+    q_i = tl.clamp(libdevice.rint(q_f.to(tl.float32)), -128.0, 127.0).to(tl.int32)
 
     # 4. Store
     tl.store(y_row_ptr + offsets, q_i.to(tl.int8), mask=mask)
@@ -834,13 +823,22 @@ def triton_quantize_rowwise(x: torch.Tensor):
     y = torch.empty_like(x, dtype=torch.int8)
     s = torch.empty((rows, 1), device=x.device, dtype=torch.float32)
 
+    input_dtype_code = 1 if x.dtype == torch.float16 else 2 if x.dtype == torch.bfloat16 else 0
+
     # Heuristic for block size
     block_size = triton.next_power_of_2(cols)
     if block_size < 128:
         block_size = 128
 
     grid = (rows,)
-    _quantize_rowwise_kernel[grid](x, y, s, cols, block_size=block_size)
+    _quantize_rowwise_kernel[grid](
+        x,
+        y,
+        s,
+        cols,
+        block_size=block_size,
+        input_dtype_code=input_dtype_code,
+    )
     return y, s
 
 
@@ -1026,6 +1024,7 @@ def int8_linear(
     out_dtype: torch.dtype = torch.bfloat16,
     convrot: bool = False,
     convrot_groupsize: int = 256,
+    input_act: str | None = None,
 ) -> torch.Tensor:
     """INT8 linear layer using fused Triton kernel.
 
@@ -1043,6 +1042,7 @@ def int8_linear(
     Returns:
         Result tensor [..., N].
     """
+    x = _apply_input_act(x, input_act)
     orig_shape = x.shape
     x_2d = x.reshape(-1, x.shape[-1])
 
