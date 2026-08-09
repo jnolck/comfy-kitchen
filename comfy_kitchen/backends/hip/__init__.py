@@ -1350,9 +1350,19 @@ def convrot_w4a4_linear(
                 x.dtype,
             )
             return out.reshape(*orig_shape[:-1], qweight.shape[0])
-        out = _int4_weight_int8_act_gemm_dequant_chunked(
+        # out = _int4_weight_int8_act_gemm_dequant_chunked(
+        #     qact_int8,
+        #     qweight,
+        #     x_scale,
+        #     wscales,
+        #     bias,
+        #     x.dtype,
+        # )
+        # return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
+        qweight_int8 = prepare_int4_weight_for_int8_linear(qweight.contiguous())
+        out = _int4_linear_via_int8_values(
             qact_int8,
-            qweight,
+            qweight_int8,
             x_scale,
             wscales,
             bias,
