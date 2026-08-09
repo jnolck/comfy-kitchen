@@ -55,6 +55,7 @@ set(HIP_SOURCES
     ops/cublas_gemm_nvfp4.cu
     ops/convrot_w4a4.cu
     ops/rms_rope.cu
+    ops/w4a8_gemm.cu
 )
 
 set_source_files_properties(${CPP_SOURCES} PROPERTIES LANGUAGE CXX)
