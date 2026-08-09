@@ -20,6 +20,17 @@ import sys
 
 import torch
 
+try:
+    import rocprofsys
+except ImportError:
+    rocprofsys = None
+
+
+def initialize_backend():
+    if rocprofsys:
+        rocprofsys.start()  # Begin tracing strictly when backend init starts
+
+
 from comfy_kitchen._rope_utils import (
     check_rope_inplace,
     detect_rms_rope_bnhd,
@@ -1350,25 +1361,26 @@ def convrot_w4a4_linear(
                 x.dtype,
             )
             return out.reshape(*orig_shape[:-1], qweight.shape[0])
-        # out = _int4_weight_int8_act_gemm_dequant_chunked(
-        #     qact_int8,
-        #     qweight,
-        #     x_scale,
-        #     wscales,
-        #     bias,
-        #     x.dtype,
-        # )
-        # return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
-        qweight_int8 = prepare_int4_weight_for_int8_linear(qweight.contiguous())
-        out = _int4_linear_via_int8_values(
+        out = _int4_weight_int8_act_gemm_dequant_chunked(
             qact_int8,
-            qweight_int8,
+            qweight,
             x_scale,
             wscales,
             bias,
             x.dtype,
         )
         return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
+        # Used this to reroute w4a4 to int8
+        # qweight_int8 = prepare_int4_weight_for_int8_linear(qweight.contiguous())
+        # out = _int4_linear_via_int8_values(
+        #     qact_int8,
+        #     qweight_int8,
+        #     x_scale,
+        #     wscales,
+        #     bias,
+        #     x.dtype,
+        # )
+        # return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
     if (
         convrot_groupsize in (16, 64, 256)
         and hasattr(_C, "quantize_int4_rowwise_convrot64")
@@ -2788,6 +2800,9 @@ def apply_rope_split_half_(
 #         out2d.add_(bias)
 #
 #     return out2d.reshape(*orig_shape[:-1], n)
+
+if rocprofsys:
+    rocprofsys.stop()
 
 
 def _build_constraints() -> dict:
