@@ -128,11 +128,11 @@ try:
 
     if os.path.exists(_module_path):
         _spec = importlib.util.spec_from_file_location(
-            "comfy_kitchen.backends.cuda._C", _module_path
+            "comfy_kitchen.backends.hip._C", _module_path
         )
         if _spec and _spec.loader:
             _C = importlib.util.module_from_spec(_spec)
-            sys.modules["comfy_kitchen.backends.cuda._C"] = _C
+            sys.modules["comfy_kitchen.backends.hip._C"] = _C
             _spec.loader.exec_module(_C)
             _EXT_AVAILABLE = True
             _EXT_ERROR = None
@@ -433,14 +433,14 @@ def _convrot_int4_fused_shared_memory_fits(x: torch.Tensor, k: int, group_size: 
     return requested_shared < _max_dynamic_shared_memory_per_block(x)
 
 
-def _should_use_convrot_fused_kernel(x: torch.Tensor, k: int, group_size: int) -> bool:
-    return (
-        group_size == 256
-        and k % 256 == 0
-        and k <= _CONVROT_FUSED_MAX_K
-        and (k <= 5120 or k >= 8192)
-        and _convrot_fused_shared_memory_fits(x, k, group_size)
-    )
+# def _should_use_convrot_fused_kernel(x: torch.Tensor, k: int, group_size: int) -> bool:
+#     return (
+#         group_size == 256
+#         and k % 256 == 0
+#         and k <= _CONVROT_FUSED_MAX_K
+#         and (k <= 5120 or k >= 8192)
+#         and _convrot_fused_shared_memory_fits(x, k, group_size)
+#     )
 
 
 def _should_use_convrot_dequant_kernel(x: torch.Tensor, k: int, group_size: int) -> bool:
@@ -3835,15 +3835,15 @@ def _build_constraints() -> dict:
 def _register():
     """Register CUDA backend with the global registry."""
     if not _EXT_AVAILABLE:
-        registry.mark_unavailable("cuda", _EXT_ERROR)
+        registry.mark_unavailable("hip", _EXT_ERROR)
         return
 
     if not torch.cuda.is_available():
-        registry.mark_unavailable("cuda", "CUDA not available on this system")
+        registry.mark_unavailable("hip", "HIP not available on this system")
         return
 
     registry.register(
-        name="cuda",
+        name="hip",
         module=__import__(__name__, fromlist=__all__),
         capabilities=_build_constraints(),
     )

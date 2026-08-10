@@ -141,12 +141,12 @@ extern "C" void launch_dequant_int4_grouped_to_int8_e4m3(const void* qw, const v
 // L2-resident instead of the full [N,K] round-tripping global (the convrot_w4a4
 // chunking trick, run at our group-16 codebook quality). Returns false if the
 // strided GEMM rejects a chunk config -> caller falls back to the 2-pass path.
-extern "C" bool launch_cutlass_int8_dequant_strided(const void* A, const void* B, const void* xs,
-                                                    const void* ws, const void* bias, void* D,
-                                                    int64_t M, int64_t N, int64_t K,
-                                                    int64_t output_stride, int out_dtype_code,
-                                                    hipStream_t stream);
-
+// extern "C" bool launch_cutlass_int8_dequant_strided(const void* A, const void* B, const void* xs,
+//                                                     const void* ws, const void* bias, void* D,
+//                                                     int64_t M, int64_t N, int64_t K,
+//                                                     int64_t output_stride, int out_dtype_code,
+//                                                     hipStream_t stream);
+//
 extern "C" bool launch_w4a8_codebook_gemm_chunked(
     const void* xq,         // [M, K] int8 activation
     const void* weight,     // [N, K/2] packed uint4
@@ -173,10 +173,10 @@ extern "C" bool launch_w4a8_codebook_gemm_chunked(
                     stream);
                 const void* bias_chunk = bias ? static_cast<const float*>(bias) + n0 : nullptr;
                 void* out_chunk = static_cast<char*>(out) + n0 * osz;
-                if (!launch_cutlass_int8_dequant_strided(
-                        xq, workspace, xs, static_cast<const float*>(s_channel) + n0, bias_chunk,
-                        out_chunk, M, cols, K, N /*output_stride*/, out_dtype_code, stream))
-                        return false;
+                // if (!launch_cutlass_int8_dequant_strided(
+                //         xq, workspace, xs, static_cast<const float*>(s_channel) + n0, bias_chunk,
+                //         out_chunk, M, cols, K, N /*output_stride*/, out_dtype_code, stream))
+                //         return false;
         }
         return true;
 }
