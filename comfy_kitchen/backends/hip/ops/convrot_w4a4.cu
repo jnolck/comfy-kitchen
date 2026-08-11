@@ -3129,7 +3129,8 @@ extern "C"
             const void* bias, void* output, void* weight_workspace, void* acc_workspace,
             void* cublas_workspace, int64_t cublas_workspace_size, int64_t num_rows,
             int64_t num_cols, int64_t K, int64_t weight_scale_size, int64_t chunk_cols,
-            bool has_bias, int output_dtype_code, int bias_dtype_code, hipStream_t stream)
+            bool allow_sm80_cutlass, bool has_bias, int output_dtype_code, int bias_dtype_code,
+            hipStream_t stream)
         {
                 if (num_rows == 0 || num_cols == 0 || K == 0) return;
                 if ((K & 1) != 0)

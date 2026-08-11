@@ -16,6 +16,8 @@
 
 #include <cstdint>
 
+#include "float_utils.h"
+
 // Grouped int4 -> int8 dequant for the int8-GEMM W4A8 path: out[n,k] =
 // round((q_u[n,k]-8) * s_rel[n, k/G]), q_u packed uint4 (even col=low nibble).
 // s_rel = per-group scale / per-channel scale (so the int8 range is used). The
@@ -34,7 +36,8 @@ __device__ __forceinline__ float load_scale<float>(float v)
 template <>
 __device__ __forceinline__ float load_scale<uint8_t>(uint8_t v)
 {
-        return __half2float(__hip_cvt_fp8_to_halfraw(v, __HIP_E4M3_FNUZ));
+        // return __half2float(__hip_cvt_fp8_to_halfraw(v, __HIP_E4M3_FNUZ));
+        return decode_std_e4m3(v);
 }
 
 // Each thread: 8 packed bytes (uint2) -> 16 int8 (uint4 store). The 16 output

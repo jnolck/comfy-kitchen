@@ -441,6 +441,16 @@ def _convrot_int4_fused_shared_memory_fits(x: torch.Tensor, k: int, group_size: 
 #         and (k <= 5120 or k >= 8192)
 #         and _convrot_fused_shared_memory_fits(x, k, group_size)
 #     )
+def _should_use_convrot_fused_kernel(x: torch.Tensor, k: int, group_size: int) -> bool:
+    if group_size != 256 or k % 256 != 0:
+        return False
+    # The 5120 < K < 8192 band loses to the rotate-matmul path
+    if not (k <= 5120 or k >= 8192):
+        return False
+    # Compute actual shared memory needed instead of hardcoded limit
+    requested = _convrot_int8_fused_shared_memory_bytes(x.shape[0], k)
+    available = _max_dynamic_shared_memory_per_block(x)
+    return requested < available
 
 
 def _should_use_convrot_dequant_kernel(x: torch.Tensor, k: int, group_size: int) -> bool:
@@ -1368,15 +1378,25 @@ def convrot_w4a4_linear(
                 x.dtype,
             )
             return out.reshape(*orig_shape[:-1], qweight.shape[0])
-        out = _int4_weight_int8_act_gemm_dequant_chunked(
+        # out = _int4_weight_int8_act_gemm_dequant_chunked(
+        #     qact_int8,
+        #     qweight,
+        #     x_scale,
+        #     wscales,
+        #     bias,
+        #     x.dtype,
+        # )
+        # return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
+        qweight_int8 = prepare_int4_weight_for_int8_linear(qweight.contiguous())
+        out = _int4_linear_via_int8_values(
             qact_int8,
-            qweight,
+            qweight_int8,
             x_scale,
             wscales,
             bias,
             x.dtype,
         )
-        return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
+        return out.reshape(*orig_shape[:-1], qweight.shape[0])
     if (
         convrot_groupsize in (16, 64, 256)
         and hasattr(_C, "quantize_int4_rowwise_convrot64")
@@ -1605,7 +1625,7 @@ def quantize_int8_rowwise_convrot64(
 # block for large K to keep enough warps resident under the single-block-per-SM
 # regime. Cap K so the shared-memory request stays within the opt-in limit;
 # larger rows fall back to the rotate-matmul + rowwise-quant path.
-_CONVROT_FUSED_MAX_K = 16384
+_CONVROT_FUSED_MAX_K = 8196
 
 # Set COMFY_KITCHEN_DISABLE_CUTLASS=1 to force the cuBLAS int8 GEMM + separate
 # dequant path (for benchmarking against the CUTLASS fused kernel).
@@ -2269,10 +2289,17 @@ def w4a8_int8_linear(
     bias_float = bias.float().contiguous() if bias is not None else None
 
     chunked = _W4A8_CHUNKED and correction is None and s_rel.dtype == torch.float8_e4m3fn
+    # Also check if the fused activation quantizer will fit in shared memory
+    if chunked:
+        requested = _convrot_int8_fused_shared_memory_bytes(m, k)
+        available = _max_dynamic_shared_memory_per_block(x_2d)
+        if requested >= available:
+            chunked = False  # fall back to non-chunked path
     if chunked:
         chunk_cols = _int4_int8_weight_chunk_cols(m, n)
         workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
         if hasattr(_C, "w4a8_codebook_linear_chunked"):
+            print("Calling w4a8_codebook_linear_chunked")
             used = _C.w4a8_codebook_linear_chunked(
                 _wrap_for_dlpack(x_2d),
                 _wrap_for_dlpack(xq),
@@ -2291,6 +2318,7 @@ def w4a8_int8_linear(
                 stream_ptr,
             )
         else:
+            print("Calling quantize_int8_rowwise_convrot")
             _C.quantize_int8_rowwise_convrot(
                 _wrap_for_dlpack(x_2d),
                 _wrap_for_dlpack(xq),
@@ -2300,6 +2328,7 @@ def w4a8_int8_linear(
                 0,
                 stream_ptr,
             )
+            print("Calling w4a8_codebook_gemm_chunked")
             used = _C.w4a8_codebook_gemm_chunked(
                 _wrap_for_dlpack(xq),
                 _wrap_for_dlpack(qdata),
@@ -2318,18 +2347,23 @@ def w4a8_int8_linear(
         if used:
             return out.reshape(*x.shape[:-1], n)
     else:
-        _C.quantize_int8_rowwise_convrot(
-            _wrap_for_dlpack(x_2d),
-            _wrap_for_dlpack(xq),
-            _wrap_for_dlpack(xs),
-            convrot_groupsize,
-            False,
-            0,
-            stream_ptr,
-        )
+        requested = _convrot_int8_fused_shared_memory_bytes(m, k)
+        available = _max_dynamic_shared_memory_per_block(x_2d)
+        if requested < available:
+            print("calling quantize_int8_rowwise_convrot")
+            _C.quantize_int8_rowwise_convrot(
+                _wrap_for_dlpack(x_2d),
+                _wrap_for_dlpack(xq),
+                _wrap_for_dlpack(xs),
+                convrot_groupsize,
+                False,
+                0,
+                stream_ptr,
+            )
 
     int8_weight = torch.empty(n, k, dtype=torch.int8, device=x.device)
     if s_rel.dtype == torch.float8_e4m3fn:
+        print("calling dequant_int4_grouped_to_int8_e4m3")
         _C.dequant_int4_grouped_to_int8_e4m3(
             _wrap_for_dlpack(qdata),
             _wrap_for_dlpack(s_rel.view(torch.uint8)),
@@ -2339,6 +2373,7 @@ def w4a8_int8_linear(
             stream_ptr,
         )
     else:
+        print("calling dequant_int4_grouped_to_int8")
         _C.dequant_int4_grouped_to_int8(
             _wrap_for_dlpack(qdata),
             _wrap_for_dlpack(s_rel),
@@ -2349,17 +2384,18 @@ def w4a8_int8_linear(
         )
 
     bias_arg = bias_float if bias_float is not None else _empty_cuda_tensor(x.device, torch.float32)
-    used = _C.cutlass_int8_dequant(
-        _wrap_for_dlpack(xq),
-        _wrap_for_dlpack(int8_weight),
-        _wrap_for_dlpack(xs),
-        _wrap_for_dlpack(s_channel),
-        _wrap_for_dlpack(bias_arg),
-        _wrap_for_dlpack(out),
-        output_dtype_code,
-        stream_ptr,
-    )
+    used = False  # _C.cutlass_int8_dequant(
+    #     _wrap_for_dlpack(xq),
+    #     _wrap_for_dlpack(int8_weight),
+    #     _wrap_for_dlpack(xs),
+    #     _wrap_for_dlpack(s_channel),
+    #     _wrap_for_dlpack(bias_arg),
+    #     _wrap_for_dlpack(out),
+    #     output_dtype_code,
+    #     stream_ptr,
+    # )
     if not used:
+        print("calling eager_w4a8_int8_linear")
         return eager_w4a8_int8_linear(
             x,
             qdata,
