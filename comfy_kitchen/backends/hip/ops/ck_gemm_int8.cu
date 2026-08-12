@@ -16,9 +16,9 @@
 #include <cstdint>
 #include <cstdio>
 
-#define COMFY_HAVE_CK
-
-#ifdef COMFY_HAVE_CK
+// #define COMFY_HAVE_CK
+//
+// #ifdef COMFY_HAVE_CK
 
 #include <map>
 #include <mutex>
@@ -372,4 +372,4 @@ extern "C"
 
 }  // extern "C"
 
-#endif  // COMFY_HAVE_CK
+// #endif  // COMFY_HAVE_CK

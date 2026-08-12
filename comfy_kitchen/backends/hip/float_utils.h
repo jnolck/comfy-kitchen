@@ -53,6 +53,8 @@ struct FP4LimitsTrait<__hip_fp4x2_storage_t>
         static constexpr float max_inverse = 1.0 / max;
 };
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-stack-address"
 // Vectorized half-precision loads
 template <typename IType>
 __forceinline__ __device__ const IType* load_f16x2(const IType* val)
@@ -115,6 +117,8 @@ __forceinline__ __device__ void store_fp4x4(OType* output, size_t idx, float val
 
         *reinterpret_cast<uint16_t*>(&output[2 * idx]) = packed.u16;
 }
+
+#pragma clang diagnostic pop
 
 // cuBLAS swizzled scale factor layout offset calculation
 __device__ __forceinline__ size_t scale_factor_swizzled_offset(size_t row_idx, size_t col_idx,
