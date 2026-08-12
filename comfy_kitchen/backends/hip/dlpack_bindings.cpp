@@ -891,11 +891,11 @@ extern "C"
             bool allow_sm80_cutlass, bool has_bias, int output_dtype_code, int bias_dtype_code,
             hipStream_t stream);
 
-        // bool launch_cutlass_int8_dequant(const void* A, const void* B, const void* xs,
-        //                                  const void* ws, const void* bias, void* D, int64_t M,
-        //                                  int64_t N, int64_t K, int out_dtype_code,
-        //                                  hipStream_t stream);
-        //
+        bool launch_cutlass_int8_dequant(const void* A, const void* B, const void* xs,
+                                         const void* ws, const void* bias, void* D, int64_t M,
+                                         int64_t N, int64_t K, int out_dtype_code,
+                                         hipStream_t stream);
+
         // bool launch_cutlass_int8_dequant_config(const void* A, const void* B, const void* xs,
         //                                         const void* ws, void* D, int64_t M, int64_t N,
         //                                         int64_t K, int out_dtype_code, int config,
@@ -1400,47 +1400,46 @@ void int4_weight_int8_act_gemm_dequant_chunked(
 
 // INT8 GEMM + fused dequant (D = acc * xs[m] * ws[n] + bias[n]) via CUTLASS.
 // Returns true on success; false means caller falls back to cuBLAS + dequant.
-// bool cutlass_int8_dequant(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> a,  // [M, K]
-//                           nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> b,  // [N, K]
-//                           nb::ndarray<float, nb::device::rocm> xs,       // [M] per-row act scale
-//                           nb::ndarray<float, nb::device::rocm> ws,       // [N] per-col weight
-//                           scale nb::ndarray<nb::device::rocm> bias,            // [N] float or
-//                           empty nb::ndarray<nb::ndim<2>, nb::device::rocm> d,  // [M, N] output
-//                           int out_dtype_code, uintptr_t stream_ptr)
-// {
-//         const int64_t M = a.shape(0);
-//         const int64_t K = a.shape(1);
-//         const int64_t N = b.shape(0);
-//         if (b.shape(1) != K) throw std::runtime_error("cutlass_int8_dequant: K mismatch");
-//         if (d.shape(0) != M || d.shape(1) != N)
-//                 throw std::runtime_error("cutlass_int8_dequant: D shape mismatch");
-//         // xs/ws/bias are read as contiguous [M]/[N] vectors; check element counts (via
-//         // size(), which tolerates the [M,1] scale the int8 caller passes but rejects
-//         // degenerate shapes like [M,0]). Match the output dtype exactly (fp16 and bf16
-//         // share itemsize but the launch selects half_t vs bfloat16_t) so a mismatched code
-//         // can't reinterpret the buffer.
-//         if (static_cast<int64_t>(xs.size()) != M)
-//                 throw std::runtime_error("cutlass_int8_dequant: xs must be a length-M vector");
-//         if (static_cast<int64_t>(ws.size()) != N)
-//                 throw std::runtime_error("cutlass_int8_dequant: ws must be a length-N vector");
-//         if (bias.size() != 0 && static_cast<int64_t>(bias.size()) != N)
-//                 throw std::runtime_error(
-//                     "cutlass_int8_dequant: bias must be empty or a length-N vector");
-//         if (out_dtype_code < 0 || out_dtype_code > 2)  // allow-list: the launch only supports
-//         these
-//                 throw std::runtime_error(
-//                     "cutlass_int8_dequant: out_dtype_code must be 0 (fp32), 1 (fp16), or 2 "
-//                     "(bf16)");
-//         if (map_dtype_to_code(d.dtype()) != out_dtype_code)
-//                 throw std::runtime_error(
-//                     "cutlass_int8_dequant: output dtype does not match out_dtype_code "
-//                     "(0=fp32, "
-//                     "1=fp16, 2=bf16)");
-//         hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
-//         const void* bias_ptr = bias.size() > 0 ? bias.data() : nullptr;
-//         return launch_cutlass_int8_dequant(a.data(), b.data(), xs.data(), ws.data(), bias_ptr,
-//                                            d.data(), M, N, K, out_dtype_code, stream);
-// }
+bool cutlass_int8_dequant(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> a,  // [M, K]
+                          nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> b,  // [N, K]
+                          nb::ndarray<float, nb::device::rocm> xs,       // [M] per-row act scale
+                          nb::ndarray<float, nb::device::rocm> ws,       // [N] per-col weight
+                          nb::ndarray<nb::device::rocm> bias,            // [N] float or
+                          nb::ndarray<nb::ndim<2>, nb::device::rocm> d,  // [M, N] output
+                          int out_dtype_code, uintptr_t stream_ptr)
+{
+        const int64_t M = a.shape(0);
+        const int64_t K = a.shape(1);
+        const int64_t N = b.shape(0);
+        if (b.shape(1) != K) throw std::runtime_error("cutlass_int8_dequant: K mismatch");
+        if (d.shape(0) != M || d.shape(1) != N)
+                throw std::runtime_error("cutlass_int8_dequant: D shape mismatch");
+        // xs/ws/bias are read as contiguous [M]/[N] vectors; check element counts (via
+        // size(), which tolerates the [M,1] scale the int8 caller passes but rejects
+        // degenerate shapes like [M,0]). Match the output dtype exactly (fp16 and bf16
+        // share itemsize but the launch selects half_t vs bfloat16_t) so a mismatched code
+        // can't reinterpret the buffer.
+        if (static_cast<int64_t>(xs.size()) != M)
+                throw std::runtime_error("cutlass_int8_dequant: xs must be a length-M vector");
+        if (static_cast<int64_t>(ws.size()) != N)
+                throw std::runtime_error("cutlass_int8_dequant: ws must be a length-N vector");
+        if (bias.size() != 0 && static_cast<int64_t>(bias.size()) != N)
+                throw std::runtime_error(
+                    "cutlass_int8_dequant: bias must be empty or a length-N vector");
+        if (out_dtype_code < 0 || out_dtype_code > 2)  // allow-list: the launch only supports
+                throw std::runtime_error(
+                    "cutlass_int8_dequant: out_dtype_code must be 0 (fp32), 1 (fp16), or 2 "
+                    "(bf16)");
+        if (map_dtype_to_code(d.dtype()) != out_dtype_code)
+                throw std::runtime_error(
+                    "cutlass_int8_dequant: output dtype does not match out_dtype_code "
+                    "(0=fp32, "
+                    "1=fp16, 2=bf16)");
+        hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
+        const void* bias_ptr = bias.size() > 0 ? bias.data() : nullptr;
+        return launch_cutlass_int8_dequant(a.data(), b.data(), xs.data(), ws.data(), bias_ptr,
+                                           d.data(), M, N, K, out_dtype_code, stream);
+}
 
 // bool cutlass_int8_dequant_config(nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> a,
 //                                  nb::ndarray<int8_t, nb::ndim<2>, nb::device::rocm> b,
@@ -2291,12 +2290,12 @@ NB_MODULE(_C, m)
               nb::arg("acc_workspace"), nb::arg("cublas_workspace"), nb::arg("chunk_cols"),
               nb::arg("allow_sm80_cutlass"), nb::arg("output_dtype_code"), nb::arg("stream_ptr"));
 
-        // m.def("cutlass_int8_dequant", &cutlass_int8_dequant,
-        //       "INT8 GEMM + fused rowwise x colwise dequant + bias via CUTLASS; false -> "
-        //       "fall back "
-        //       "to cuBLAS",
-        //       nb::arg("a"), nb::arg("b"), nb::arg("xs"), nb::arg("ws"), nb::arg("bias"),
-        //       nb::arg("d"), nb::arg("out_dtype_code"), nb::arg("stream_ptr"));
+        m.def("cutlass_int8_dequant", &cutlass_int8_dequant,
+              "INT8 GEMM + fused rowwise x colwise dequant + bias via CUTLASS; false -> "
+              "fall back "
+              "to cuBLAS",
+              nb::arg("a"), nb::arg("b"), nb::arg("xs"), nb::arg("ws"), nb::arg("bias"),
+              nb::arg("d"), nb::arg("out_dtype_code"), nb::arg("stream_ptr"));
 
         // m.def("cutlass_int8_dequant_config", &cutlass_int8_dequant_config,
         //       "Benchmark one fused CUTLASS INT8 kernel configuration", nb::arg("a"),

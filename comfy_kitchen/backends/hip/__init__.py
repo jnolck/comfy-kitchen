@@ -2033,6 +2033,7 @@ def int8_linear(
             bias.device != x.device or bias.dtype != out_dtype or not bias.is_contiguous()
         ):
             bias_arg = bias.to(device=x.device, dtype=out_dtype).contiguous()
+        print("calling int8_linear_m1")
         _C.int8_linear_m1(
             _wrap_for_dlpack(x_2d),
             _wrap_for_dlpack(x_qdata),
@@ -2056,6 +2057,7 @@ def int8_linear(
         if _fused_convrot_ok:
             x_qdata = torch.empty((m, k), dtype=torch.int8, device=x.device)
             x_scale = torch.empty((m, 1), dtype=torch.float32, device=x.device)
+            print("calling quantize_int8_rowwise_convrot64")
             _C.quantize_int8_rowwise_convrot64(
                 _wrap_for_dlpack(x_2d),
                 _wrap_for_dlpack(x_qdata),
@@ -2076,6 +2078,7 @@ def int8_linear(
     else:
         x_qdata = torch.empty((m, k), dtype=torch.int8, device=x.device)
         x_scale = torch.empty((m, 1), dtype=torch.float32, device=x.device)
+        print("calling quantize_int8_rowwise")
         _C.quantize_int8_rowwise(
             _wrap_for_dlpack(x_2d),
             _wrap_for_dlpack(x_qdata),
@@ -2093,6 +2096,7 @@ def int8_linear(
             bias.device != x.device or bias.dtype != out_dtype or not bias.is_contiguous()
         ):
             bias_arg = bias.to(device=x.device, dtype=out_dtype).contiguous()
+        print("calling int8_gemv_dequant")
         _C.int8_gemv_dequant(
             _wrap_for_dlpack(x_qdata),
             _wrap_for_dlpack(weight),
@@ -2145,6 +2149,7 @@ def int8_linear(
             weight_scale if weight_scale.numel() == n else weight_scale.expand(n).contiguous()
         )
         bias_f32 = bias_arg.to(torch.float32).contiguous() if bias is not None else bias_arg
+        print("calling cutlass_int8_dequant")
         used_cutlass = _C.cutlass_int8_dequant(
             _wrap_for_dlpack(x_qdata),
             _wrap_for_dlpack(weight),
@@ -2169,6 +2174,7 @@ def int8_linear(
             cublas_weight = weight
 
         out_int32 = torch.empty((m, padded_n), dtype=torch.int32, device=x.device)
+        print("calling cublas_gemm_int8")
         _C.cublas_gemm_int8(
             _wrap_for_dlpack(cublas_x),
             _wrap_for_dlpack(cublas_weight),
@@ -2178,6 +2184,7 @@ def int8_linear(
         )
         if padded_n != n:
             out_int32 = out_int32[:, :n].contiguous()
+        print("calling dequantize_int8_linear")
         _C.dequantize_int8_linear(
             _wrap_for_dlpack(out_int32),
             _wrap_for_dlpack(x_scale),
@@ -2347,19 +2354,21 @@ def w4a8_int8_linear(
         if used:
             return out.reshape(*x.shape[:-1], n)
     else:
-        requested = _convrot_int8_fused_shared_memory_bytes(m, k)
-        available = _max_dynamic_shared_memory_per_block(x_2d)
-        if requested < available:
-            print("calling quantize_int8_rowwise_convrot")
-            _C.quantize_int8_rowwise_convrot(
-                _wrap_for_dlpack(x_2d),
-                _wrap_for_dlpack(xq),
-                _wrap_for_dlpack(xs),
-                convrot_groupsize,
-                False,
-                0,
-                stream_ptr,
-            )
+        # print("calling quantize_int8_rowwise_convrot")
+        # _C.quantize_int8_rowwise_convrot(
+        #     _wrap_for_dlpack(x_2d),
+        #     _wrap_for_dlpack(xq),
+        #     _wrap_for_dlpack(xs),
+        #     convrot_groupsize,
+        #     False,
+        #     0,
+        #     stream_ptr,
+        # )
+        h = _build_hadamard(convrot_groupsize, device=x_2d.device, dtype=x_2d.dtype)
+        x_rot = _rotate_activation(x_2d, h, convrot_groupsize).contiguous()
+        xq_new, xs_new = quantize_int8_rowwise(x_rot)
+        xq.copy_(xq_new)
+        xs.copy_(xs_new)
 
     int8_weight = torch.empty(n, k, dtype=torch.int8, device=x.device)
     if s_rel.dtype == torch.float8_e4m3fn:
@@ -2383,30 +2392,42 @@ def w4a8_int8_linear(
             stream_ptr,
         )
 
+    used = False
     bias_arg = bias_float if bias_float is not None else _empty_cuda_tensor(x.device, torch.float32)
-    used = False  # _C.cutlass_int8_dequant(
-    #     _wrap_for_dlpack(xq),
-    #     _wrap_for_dlpack(int8_weight),
-    #     _wrap_for_dlpack(xs),
-    #     _wrap_for_dlpack(s_channel),
-    #     _wrap_for_dlpack(bias_arg),
-    #     _wrap_for_dlpack(out),
-    #     output_dtype_code,
-    #     stream_ptr,
-    # )
+    print("calling cutlass_int8_dequant")
+    used = _C.cutlass_int8_dequant(
+        _wrap_for_dlpack(xq),
+        _wrap_for_dlpack(int8_weight),
+        _wrap_for_dlpack(xs),
+        _wrap_for_dlpack(s_channel),
+        _wrap_for_dlpack(bias_arg),
+        _wrap_for_dlpack(out),
+        output_dtype_code,
+        stream_ptr,
+    )
     if not used:
-        print("calling eager_w4a8_int8_linear")
-        return eager_w4a8_int8_linear(
+        print("calling int8_linear")
+        # return eager_w4a8_int8_linear(
+        #     x,
+        #     qdata,
+        #     s_rel,
+        #     s_channel,
+        #     codebook=codebook,
+        #     correction=correction,
+        #     bias=bias,
+        #     group_size=group_size,
+        #     convrot_groupsize=convrot_groupsize,
+        #     out_dtype=out_dtype,
+        # )
+
+        return int8_linear(
             x,
-            qdata,
-            s_rel,
-            s_channel,
-            codebook=codebook,
-            correction=correction,
+            int8_weight,
+            s_channel,  # per-channel scale
             bias=bias,
-            group_size=group_size,
-            convrot_groupsize=convrot_groupsize,
             out_dtype=out_dtype,
+            convrot=True,  # already have convrot-quantized activation from quantize_int8_rowwise_convrot
+            convrot_groupsize=convrot_groupsize,
         )
 
     if correction is not None:

@@ -260,12 +260,12 @@ bool dispatch_fused_ck(const int8_t* A, const int8_t* B, const float* xs, const 
 
         static const Fn runners[] = {
             // just commenting this out to improve compile times
-            // &FusedInt8GemmCKTile<OutT, 128, 128, 64, 4, 2, 1, 16, 16, 16, 1>::run,
-            // &FusedInt8GemmCKTile<OutT, 128, 256, 64, 4, 2, 1, 16, 16, 16, 2>::run,
-            // &FusedInt8GemmCKTile<OutT, 256, 128, 64, 4, 2, 1, 16, 16, 16, 2>::run,
-            // &FusedInt8GemmCKTile<OutT, 64, 64, 32, 2, 2, 1, 16, 16, 16, 1>::run,
-            // &FusedInt8GemmCKTile<OutT, 64, 128, 32, 2, 2, 1, 16, 16, 16, 1>::run,
-            // &FusedInt8GemmCKTile<OutT, 128, 64, 32, 2, 2, 1, 16, 16, 16, 2>::run,
+            &FusedInt8GemmCKTile<OutT, 128, 128, 64, 4, 2, 1, 16, 16, 16, 1>::run,
+            &FusedInt8GemmCKTile<OutT, 128, 256, 64, 4, 2, 1, 16, 16, 16, 2>::run,
+            &FusedInt8GemmCKTile<OutT, 256, 128, 64, 4, 2, 1, 16, 16, 16, 2>::run,
+            &FusedInt8GemmCKTile<OutT, 64, 64, 32, 2, 2, 1, 16, 16, 16, 1>::run,
+            &FusedInt8GemmCKTile<OutT, 64, 128, 32, 2, 2, 1, 16, 16, 16, 1>::run,
+            &FusedInt8GemmCKTile<OutT, 128, 64, 32, 2, 2, 1, 16, 16, 16, 2>::run,
             &FusedInt8GemmCKTile<OutT, 32, 64, 32, 1, 2, 1, 16, 16, 16, 1>::run,
         };
         constexpr int NC = sizeof(runners) / sizeof(runners[0]);

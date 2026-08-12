@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-#include "float_utils.h"
+#include "fp8_utils.h"
 
 // Grouped int4 -> int8 dequant for the int8-GEMM W4A8 path: out[n,k] =
 // round((q_u[n,k]-8) * s_rel[n, k/G]), q_u packed uint4 (even col=low nibble).
@@ -37,7 +37,7 @@ template <>
 __device__ __forceinline__ float load_scale<uint8_t>(uint8_t v)
 {
         // return __half2float(__hip_cvt_fp8_to_halfraw(v, __HIP_E4M3_FNUZ));
-        return decode_std_e4m3(v);
+        return comfy::hip_backend::fp8_to_float(v);
 }
 
 // Each thread: 8 packed bytes (uint2) -> 16 int8 (uint4 store). The 16 output
@@ -144,12 +144,24 @@ extern "C" void launch_dequant_int4_grouped_to_int8_e4m3(const void* qw, const v
 // L2-resident instead of the full [N,K] round-tripping global (the convrot_w4a4
 // chunking trick, run at our group-16 codebook quality). Returns false if the
 // strided GEMM rejects a chunk config -> caller falls back to the 2-pass path.
-// extern "C" bool launch_cutlass_int8_dequant_strided(const void* A, const void* B, const void* xs,
-//                                                     const void* ws, const void* bias, void* D,
-//                                                     int64_t M, int64_t N, int64_t K,
-//                                                     int64_t output_stride, int out_dtype_code,
-//                                                     hipStream_t stream);
-//
+
+#ifdef COMFY_HAVE_CK
+extern "C" bool launch_cutlass_int8_dequant(const void* A, const void* B, const void* xs,
+                                            const void* ws, const void* bias, void* D, int64_t M,
+                                            int64_t N, int64_t K, int out_dtype_code,
+                                            hipStream_t stream);
+
+extern "C" bool launch_cutlass_int8_dequant_strided(const void* A, const void* B, const void* xs,
+                                                    const void* ws, const void* bias, void* D,
+                                                    int64_t M, int64_t N, int64_t K,
+                                                    int64_t output_stride, int out_dtype_code,
+                                                    hipStream_t stream)
+{
+        (void)output_stride;
+        return launch_cutlass_int8_dequant(A, B, xs, ws, bias, D, M, N, K, out_dtype_code, stream);
+}
+#endif
+
 extern "C" bool launch_w4a8_codebook_gemm_chunked(
     const void* xq,         // [M, K] int8 activation
     const void* weight,     // [N, K/2] packed uint4
@@ -176,10 +188,10 @@ extern "C" bool launch_w4a8_codebook_gemm_chunked(
                     stream);
                 const void* bias_chunk = bias ? static_cast<const float*>(bias) + n0 : nullptr;
                 void* out_chunk = static_cast<char*>(out) + n0 * osz;
-                // if (!launch_cutlass_int8_dequant_strided(
-                //         xq, workspace, xs, static_cast<const float*>(s_channel) + n0, bias_chunk,
-                //         out_chunk, M, cols, K, N /*output_stride*/, out_dtype_code, stream))
-                //         return false;
+                if (!launch_cutlass_int8_dequant_strided(
+                        xq, workspace, xs, static_cast<const float*>(s_channel) + n0, bias_chunk,
+                        out_chunk, M, cols, K, N /*output_stride*/, out_dtype_code, stream))
+                        return false;
         }
         return true;
 }
@@ -327,11 +339,14 @@ __global__ void quantize_w4a8_convrot_kernel(const InputType* __restrict__ rotat
         {
                 const float gs = gscale[g];
                 const float srel_f = gs / sc;
+                // const uint8_t srel_bits = __hip_cvt_float_to_fp8(srel_f, __HIP_SATFINITE,
+                // __HIP_E4M3_FNUZ);
                 const uint8_t srel_bits =
-                    __hip_cvt_float_to_fp8(srel_f, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
+                    comfy::hip_backend::pack_fp8(srel_f, comfy::hip_backend::kFp8E4M3Code);
                 s_rel[srow_off + g] = srel_bits;
-                const float srel_r =
-                    __half2float(__hip_cvt_fp8_to_halfraw(srel_bits, __HIP_E4M3_FNUZ));
+                // const float srel_r = __half2float(__hip_cvt_fp8_to_halfraw(srel_bits,
+                // __HIP_E4M3_FNUZ));
+                const float srel_r = comfy::hip_backend::fp8_to_float(srel_bits);
                 float lv[16];
 #pragma unroll
                 for (int j = 0; j < 16; ++j)
