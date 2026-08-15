@@ -140,6 +140,8 @@ __device__ __forceinline__ size_t scale_factor_swizzled_offset(size_t row_idx, s
                d5;
 }
 
+// From 0xDELUXA hip port fp8_utils.h
+
 __forceinline__ __device__ uint8_t encode_std_e4m3(float val)
 {
         constexpr float kMax = 448.0f;

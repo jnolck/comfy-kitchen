@@ -23,11 +23,11 @@ extern "C" void launch_cublas_gemm_int8_kernel(const void* A_ptr, const void* B_
                                                int64_t M, int64_t N, int64_t K, void* workspace_ptr,
                                                int64_t workspace_size, hipStream_t stream);
 
-// extern "C" bool launch_cutlass_int8_dequant_strided(const void* A, const void* B, const void* xs,
-//                                                     const void* ws, const void* bias, void* D,
-//                                                     int64_t M, int64_t N, int64_t K,
-//                                                     int64_t output_stride, int out_dtype_code,
-//                                                     hipStream_t stream);
+extern "C" bool launch_cutlass_int8_dequant_strided(const void* A, const void* B, const void* xs,
+                                                    const void* ws, const void* bias, void* D,
+                                                    int64_t M, int64_t N, int64_t K,
+                                                    int64_t output_stride, int out_dtype_code,
+                                                    hipStream_t stream);
 
 namespace
 {
@@ -3183,18 +3183,18 @@ extern "C"
                                                      : nullptr;
                         void* chunk_output = static_cast<char*>(output) +
                                              n0 * fp_dtype_size_bytes(output_dtype_code);
-                        // const bool used_cutlass =
-                        //     (num_rows >= 1024 &&
-                        //      (cols >= 4096 || (num_cols == 2560 && cols == 2560)) &&
-                        //      weight_scale_size != 1 && (!has_bias || bias_dtype_code == 0) &&
-                        //      launch_cutlass_int8_dequant_strided(
-                        //          input, weight_workspace, x_scales, chunk_weight_scales,
-                        //          chunk_bias, chunk_output, num_rows, cols, K, num_cols,
-                        //          output_dtype_code, stream));
-                        // if (used_cutlass)
-                        // {
-                        //         continue;
-                        // }
+                        const bool used_cutlass =
+                            (num_rows >= 1024 &&
+                             (cols >= 4096 || (num_cols == 2560 && cols == 2560)) &&
+                             weight_scale_size != 1 && (!has_bias || bias_dtype_code == 0) &&
+                             launch_cutlass_int8_dequant_strided(
+                                 input, weight_workspace, x_scales, chunk_weight_scales, chunk_bias,
+                                 chunk_output, num_rows, cols, K, num_cols, output_dtype_code,
+                                 stream));
+                        if (used_cutlass)
+                        {
+                                continue;
+                        }
 
                         launch_cublas_gemm_int8_kernel(input, weight_workspace, acc_workspace,
                                                        num_rows, cols, K, cublas_workspace,

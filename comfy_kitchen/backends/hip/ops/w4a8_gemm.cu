@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-#include "fp8_utils.h"
+#include "../fp8_utils.h"
 
 // Grouped int4 -> int8 dequant for the int8-GEMM W4A8 path: out[n,k] =
 // round((q_u[n,k]-8) * s_rel[n, k/G]), q_u packed uint4 (even col=low nibble).
@@ -145,7 +145,7 @@ extern "C" void launch_dequant_int4_grouped_to_int8_e4m3(const void* qw, const v
 // chunking trick, run at our group-16 codebook quality). Returns false if the
 // strided GEMM rejects a chunk config -> caller falls back to the 2-pass path.
 
-#ifdef COMFY_HAVE_CK
+// #ifdef COMFY_HAVE_CK
 extern "C" bool launch_cutlass_int8_dequant(const void* A, const void* B, const void* xs,
                                             const void* ws, const void* bias, void* D, int64_t M,
                                             int64_t N, int64_t K, int out_dtype_code,
@@ -160,7 +160,7 @@ extern "C" bool launch_cutlass_int8_dequant_strided(const void* A, const void* B
         (void)output_stride;
         return launch_cutlass_int8_dequant(A, B, xs, ws, bias, D, M, N, K, out_dtype_code, stream);
 }
-#endif
+// #endif
 
 extern "C" bool launch_w4a8_codebook_gemm_chunked(
     const void* xq,         // [M, K] int8 activation
