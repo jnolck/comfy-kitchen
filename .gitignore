@@ -19,3 +19,5 @@ uv.lock
 *.so
 tmp/
 .clang-format
+tests/w4a8/
+tests/
