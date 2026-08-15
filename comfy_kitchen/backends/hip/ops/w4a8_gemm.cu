@@ -145,22 +145,11 @@ extern "C" void launch_dequant_int4_grouped_to_int8_e4m3(const void* qw, const v
 // chunking trick, run at our group-16 codebook quality). Returns false if the
 // strided GEMM rejects a chunk config -> caller falls back to the 2-pass path.
 
-// #ifdef COMFY_HAVE_CK
-extern "C" bool launch_cutlass_int8_dequant(const void* A, const void* B, const void* xs,
-                                            const void* ws, const void* bias, void* D, int64_t M,
-                                            int64_t N, int64_t K, int out_dtype_code,
-                                            hipStream_t stream);
-
 extern "C" bool launch_cutlass_int8_dequant_strided(const void* A, const void* B, const void* xs,
                                                     const void* ws, const void* bias, void* D,
                                                     int64_t M, int64_t N, int64_t K,
                                                     int64_t output_stride, int out_dtype_code,
-                                                    hipStream_t stream)
-{
-        (void)output_stride;
-        return launch_cutlass_int8_dequant(A, B, xs, ws, bias, D, M, N, K, out_dtype_code, stream);
-}
-// #endif
+                                                    hipStream_t stream);
 
 extern "C" bool launch_w4a8_codebook_gemm_chunked(
     const void* xq,         // [M, K] int8 activation

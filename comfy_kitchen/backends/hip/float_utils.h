@@ -142,48 +142,6 @@ __device__ __forceinline__ size_t scale_factor_swizzled_offset(size_t row_idx, s
 
 // From 0xDELUXA hip port fp8_utils.h
 
-__forceinline__ __device__ uint8_t encode_std_e4m3(float val)
-{
-        constexpr float kMax = 448.0f;
-        val = fminf(fmaxf(val, -kMax), kMax);
-
-        uint8_t sign = (val < 0.0f) ? 0x80 : 0x00;
-        float abs_val = fabsf(val);
-
-        if (abs_val == 0.0f) return 0x00;
-
-        int exp;
-        float sig = frexpf(abs_val, &exp);
-        int exp_bits = exp + 6;  // bias=7: frexp gives sig*2^exp, we need 2^(exp_bits-7)*(1+mant/8)
-
-        if (exp_bits <= 0)
-        {
-                // Subnormal: 2^-6 * mant/8 = abs_val
-                int mant = (int)roundf(abs_val * 64.0f * 8.0f);  // / (2^-6/8) = * 512
-                if (mant > 7) mant = 7;
-                if (mant == 0) return 0x00;
-                return sign | mant;
-        }
-
-        if (exp_bits >= 15)
-        {
-                return sign | (15 << 3) | 6;  // max: 0x7E or 0xFE
-        }
-
-        // Normal: abs_val = (1 + mant/8) * 2^(exp_bits - 7)
-        // sig * 2^exp = (1 + mant/8) * 2^(exp_bits - 7)
-        // sig * 2 = 1 + mant/8  →  mant = (sig * 2 - 1) * 8
-        int mant = (int)roundf((sig * 2.0f - 1.0f) * 8.0f + 1e-7f);
-        if (mant == 8)
-        {
-                mant = 0;
-                exp_bits++;
-                if (exp_bits >= 15) return sign | (15 << 3) | 6;
-        }
-
-        return sign | (exp_bits << 3) | mant;
-}
-
 }  // namespace comfy
 
 #endif  // COMFY_FLOAT_UTILS_CUH_

@@ -120,58 +120,25 @@ extern "C"
         //     int input_dtype_code,
         //     hipStream_t stream);
 
-        // // SVDQuant W4A4 — see ops/quantize_svdquant_w4a4.cu
-        // void launch_svdquant_quantize_w4a4_kernel(
-        //     const void* x,
-        //     const void* smooth,
-        //     const void* lora_down,
-        //     void* q_x,
-        //     void* ascales,
-        //     void* lora_act,
-        //     int M,
-        //     int M_pad,
-        //     int K,
-        //     int R,
-        //     int input_dtype_code,
-        //     int act_unsigned,
-        //     hipStream_t stream);
+        // SVDQuant W4A4 — see ops/quantize_svdquant_w4a4.cu
+        // void launch_svdquant_quantize_w4a4_kernel(const void* x, const void* smooth,
+        //                                           const void* lora_down, void* q_x, void*
+        //                                           ascales, void* lora_act, int M, int M_pad, int
+        //                                           K, int R, int input_dtype_code, int
+        //                                           act_unsigned, hipStream_t stream);
 
         // SVDQuant W4A4 — see ops/scaled_mm_svdquant_w4a4.cu
         // void launch_svdquant_scaled_mm_w4a4_kernel(
-        //     const void* act,
-        //     const void* wgt,
-        //     const void* ascales,
-        //     const void* wscales,
-        //     const void* lora_act_in,
-        //     const void* lora_up,
-        //     const void* bias,
-        //     void* out,
-        //     int M,
-        //     int N,
-        //     int K,
-        //     int R,
-        //     int act_unsigned,
-        //     int out_dtype_code,
-        //     int tile_packed,
-        //     int fast_accum,
-        //     int shared_scale,
-        //     int fuse_lora,
-        //     hipStream_t stream);
+        //     const void* act, const void* wgt, const void* ascales, const void* wscales,
+        //     const void* lora_act_in, const void* lora_up, const void* bias, void* out, int M, int
+        //     N, int K, int R, int act_unsigned, int out_dtype_code, int tile_packed, int
+        //     fast_accum, int shared_scale, int fuse_lora, hipStream_t stream);
 
         // AWQ W4A16 — see ops/awq_w4a16.cu. Internal M-routing picks
         // gemv (M ≤ 8) vs gemm path; bias / LoRA-up are applied externally.
-        // void launch_awq_w4a16_kernel(
-        //     const void* x,
-        //     const void* qweight,
-        //     const void* wscales,
-        //     const void* wzeros,
-        //     void* out,
-        //     int M,
-        //     int N,
-        //     int K,
-        //     int G,
-        //     int dtype_code,
-        //     hipStream_t stream);
+        // void launch_awq_w4a16_kernel(const void* x, const void* qweight, const void* wscales,
+        //                              const void* wzeros, void* out, int M, int N, int K, int G,
+        //                              int dtype_code, hipStream_t stream);
 
         // Fused 3D neighborhood attention — see ops/na3d.cu.
         // void launch_na3d_kernel(
@@ -683,113 +650,108 @@ void rms_rope1(nb::ndarray<nb::device::rocm> q, nb::ndarray<nb::device::rocm> fr
 // (see ops/quantize_svdquant_w4a4.cu and ops/scaled_mm_svdquant_w4a4.cu).
 // ---------------------------------------------------------------------------
 
-// static int svdquant_dtype_code(const nb::dlpack::dtype& dt) {
-//     int c = map_dtype_to_code(dt);
-//     if (c < 0) throw std::runtime_error("svdquant: unsupported dtype");
-//     return c;
-// }
+static int svdquant_dtype_code(const nb::dlpack::dtype& dt)
+{
+        int c = map_dtype_to_code(dt);
+        if (c < 0) throw std::runtime_error("svdquant: unsupported dtype");
+        return c;
+}
 //
 // void svdquant_quantize_w4a4(
-//     nb::ndarray<nb::device::rocm> x,           // (M, K) bf16/fp16 — pre-shifted if unsigned path
-//     nb::ndarray<nb::device::rocm> smooth,      // (K,)
-//     nb::ndarray<nb::device::rocm> lora_down,   // (K, R)
-//     nb::ndarray<nb::device::rocm> q_x,         // (M_pad, K/2) int8
-//     nb::ndarray<nb::device::rocm> ascales,     // (K/G, M_pad)
-//     nb::ndarray<nb::device::rocm> lora_act,    // (M_pad, R) fp32
-//     bool act_unsigned,
-//     uintptr_t stream_ptr)
+//     nb::ndarray<nb::device::rocm> x,          // (M, K) bf16/fp16 — pre-shifted if unsigned path
+//     nb::ndarray<nb::device::rocm> smooth,     // (K,)
+//     nb::ndarray<nb::device::rocm> lora_down,  // (K, R)
+//     nb::ndarray<nb::device::rocm> q_x,        // (M_pad, K/2) int8
+//     nb::ndarray<nb::device::rocm> ascales,    // (K/G, M_pad)
+//     nb::ndarray<nb::device::rocm> lora_act,   // (M_pad, R) fp32
+//     bool act_unsigned, uintptr_t stream_ptr)
 // {
-//     int M = static_cast<int>(x.shape(0));
-//     int K = static_cast<int>(x.shape(1));
-//     int M_pad = static_cast<int>(q_x.shape(0));
-//     int R = static_cast<int>(lora_down.shape(1));
-//     int input_code = svdquant_dtype_code(x.dtype());
+//         int M = static_cast<int>(x.shape(0));
+//         int K = static_cast<int>(x.shape(1));
+//         int M_pad = static_cast<int>(q_x.shape(0));
+//         int R = static_cast<int>(lora_down.shape(1));
+//         int input_code = svdquant_dtype_code(x.dtype());
 //
-//     hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
-//     launch_svdquant_quantize_w4a4_kernel(
-//         x.data(), smooth.data(), lora_down.data(),
-//         q_x.data(), ascales.data(), lora_act.data(),
-//         M, M_pad, K, R, input_code,
-//         static_cast<int>(act_unsigned), stream);
+//         hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
+//         launch_svdquant_quantize_w4a4_kernel(x.data(), smooth.data(), lora_down.data(),
+//         q_x.data(),
+//                                              ascales.data(), lora_act.data(), M, M_pad, K, R,
+//                                              input_code, static_cast<int>(act_unsigned), stream);
 // }
-//
-// void svdquant_scaled_mm_w4a4(
-//     nb::ndarray<nb::device::rocm> act,           // (M, K/2) int8
-//     nb::ndarray<nb::device::rocm> wgt,           // (N, K/2) int8
-//     nb::ndarray<nb::device::rocm> ascales,       // (K/G, M)
-//     nb::ndarray<nb::device::rocm> wscales,       // (K/G, N)
-//     nb::ndarray<nb::device::rocm> lora_act_in,   // (M, R) fp32
-//     nb::ndarray<nb::device::rocm> lora_up,       // (N, R)
-//     nb::ndarray<nb::device::rocm> bias,          // (N,) or empty
-//     nb::ndarray<nb::device::rocm> out,           // (M, N)
-//     bool act_unsigned,
-//     bool fast_accum,
-//     bool shared_scale,
-//     bool fuse_lora,
-//     uintptr_t stream_ptr)
+
+// void svdquant_scaled_mm_w4a4(nb::ndarray<nb::device::rocm> act,          // (M, K/2) int8
+//                              nb::ndarray<nb::device::rocm> wgt,          // (N, K/2) int8
+//                              nb::ndarray<nb::device::rocm> ascales,      // (K/G, M)
+//                              nb::ndarray<nb::device::rocm> wscales,      // (K/G, N)
+//                              nb::ndarray<nb::device::rocm> lora_act_in,  // (M, R) fp32
+//                              nb::ndarray<nb::device::rocm> lora_up,      // (N, R)
+//                              nb::ndarray<nb::device::rocm> bias,         // (N,) or empty
+//                              nb::ndarray<nb::device::rocm> out,          // (M, N)
+//                              bool act_unsigned, bool fast_accum, bool shared_scale, bool
+//                              fuse_lora, uintptr_t stream_ptr)
 // {
-//     int M = static_cast<int>(act.shape(0));
-//     int K = static_cast<int>(act.shape(1)) * 2;
-//     const bool tile_packed = (wgt.ndim() == 4);
-//     int N = tile_packed ? static_cast<int>(wgt.shape(0)) * 128 : static_cast<int>(wgt.shape(0));
-//     int R = static_cast<int>(lora_act_in.shape(1));
-//     int out_code = svdquant_dtype_code(out.dtype());
-//     if (fuse_lora && svdquant_dtype_code(lora_act_in.dtype()) != out_code) {
-//         throw std::runtime_error(
-//             "svdquant_scaled_mm_w4a4: fused LoRA-up requires lora_act_in dtype "
-//             "to match output/lora_up dtype");
-//     }
-//
-//     if (tile_packed) {
-//         if (wgt.shape(1) != K / 64 || wgt.shape(2) != 32 || wgt.shape(3) != 128) {
-//             throw std::runtime_error(
-//                 "svdquant_scaled_mm_w4a4: tile-packed weight must have shape "
-//                 "(N/128, K/64, 32, 128)");
+//         int M = static_cast<int>(act.shape(0));
+//         int K = static_cast<int>(act.shape(1)) * 2;
+//         const bool tile_packed = (wgt.ndim() == 4);
+//         int N = tile_packed ? static_cast<int>(wgt.shape(0)) * 128 :
+//         static_cast<int>(wgt.shape(0)); int R = static_cast<int>(lora_act_in.shape(1)); int
+//         out_code = svdquant_dtype_code(out.dtype()); if (fuse_lora &&
+//         svdquant_dtype_code(lora_act_in.dtype()) != out_code)
+//         {
+//                 throw std::runtime_error(
+//                     "svdquant_scaled_mm_w4a4: fused LoRA-up requires lora_act_in dtype "
+//                     "to match output/lora_up dtype");
 //         }
-//         if (wscales.ndim() != 3 || wscales.shape(0) != wgt.shape(0) ||
-//             wscales.shape(1) != K / 64 || wscales.shape(2) != 128) {
-//             throw std::runtime_error(
-//                 "svdquant_scaled_mm_w4a4: tile-packed wscales must have shape "
-//                 "(N/128, K/64, 128)");
-//         }
-//     }
 //
-//     const void* bias_ptr = (bias.data() != nullptr && bias.size() > 0) ? bias.data() : nullptr;
-//     hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
-//     launch_svdquant_scaled_mm_w4a4_kernel(
-//         act.data(), wgt.data(),
-//         ascales.data(), wscales.data(),
-//         lora_act_in.data(), lora_up.data(), bias_ptr,
+//         if (tile_packed)
+//         {
+//                 if (wgt.shape(1) != K / 64 || wgt.shape(2) != 32 || wgt.shape(3) != 128)
+//                 {
+//                         throw std::runtime_error(
+//                             "svdquant_scaled_mm_w4a4: tile-packed weight must have shape "
+//                             "(N/128, K/64, 32, 128)");
+//                 }
+//                 if (wscales.ndim() != 3 || wscales.shape(0) != wgt.shape(0) ||
+//                     wscales.shape(1) != K / 64 || wscales.shape(2) != 128)
+//                 {
+//                         throw std::runtime_error(
+//                             "svdquant_scaled_mm_w4a4: tile-packed wscales must have shape "
+//                             "(N/128, K/64, 128)");
+//                 }
+//         }
+//
+//         const void* bias_ptr = (bias.data() != nullptr && bias.size() > 0) ? bias.data() :
+//         nullptr; hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
+//         launch_svdquant_scaled_mm_w4a4_kernel(
+//             act.data(), wgt.data(), ascales.data(), wscales.data(), lora_act_in.data(),
+//             lora_up.data(), bias_ptr, out.data(), M, N, K, R, static_cast<int>(act_unsigned),
+//             out_code, static_cast<int>(tile_packed), static_cast<int>(fast_accum),
+//             static_cast<int>(shared_scale), static_cast<int>(fuse_lora), stream);
+// }
+
+// ---------------------------------------------------------------------------
+// AWQ W4A16 — int4 weight, fp16/bf16 activation matmul. See ops/awq_w4a16.cu.
+// ---------------------------------------------------------------------------
+// void awq_w4a16(nb::ndarray<nb::device::rocm> x,        // (M, K) bf16/fp16
+//                nb::ndarray<nb::device::rocm> qweight,  // (N, K/2) int8 packed uint4
+//                nb::ndarray<nb::device::rocm> wscales,  // (K/G, N)
+//                nb::ndarray<nb::device::rocm> wzeros,   // (K/G, N)
+//                nb::ndarray<nb::device::rocm> out,      // (M, N)
+//                int group_size, uintptr_t stream_ptr)
+// {
+//         const int M = static_cast<int>(x.shape(0));
+//         const int K = static_cast<int>(x.shape(1));
+//         const int N = static_cast<int>(qweight.shape(0));
+//         const int dtype_code = svdquant_dtype_code(x.dtype());
+//         if (dtype_code != 1 && dtype_code != 2)
+//         {
+//                 throw std::runtime_error(
+//                     "awq_w4a16: only fp16 (1) and bf16 (2) activations supported");
+//         }
+//         hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
+//         launch_awq_w4a16_kernel(x.data(), qweight.data(), wscales.data(), wzeros.data(),
 //         out.data(),
-//         M, N, K, R,
-//         static_cast<int>(act_unsigned), out_code,
-//         static_cast<int>(tile_packed), static_cast<int>(fast_accum),
-//         static_cast<int>(shared_scale), static_cast<int>(fuse_lora), stream);
-// }
-//
-// // ---------------------------------------------------------------------------
-// // AWQ W4A16 — int4 weight, fp16/bf16 activation matmul. See ops/awq_w4a16.cu.
-// // ---------------------------------------------------------------------------
-// void awq_w4a16(
-//     nb::ndarray<nb::device::rocm> x,         // (M, K) bf16/fp16
-//     nb::ndarray<nb::device::rocm> qweight,   // (N, K/2) int8 packed uint4
-//     nb::ndarray<nb::device::rocm> wscales,   // (K/G, N)
-//     nb::ndarray<nb::device::rocm> wzeros,    // (K/G, N)
-//     nb::ndarray<nb::device::rocm> out,       // (M, N)
-//     int group_size,
-//     uintptr_t stream_ptr)
-// {
-//     const int M = static_cast<int>(x.shape(0));
-//     const int K = static_cast<int>(x.shape(1));
-//     const int N = static_cast<int>(qweight.shape(0));
-//     const int dtype_code = svdquant_dtype_code(x.dtype());
-//     if (dtype_code != 1 && dtype_code != 2) {
-//         throw std::runtime_error("awq_w4a16: only fp16 (1) and bf16 (2) activations supported");
-//     }
-//     hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
-//     launch_awq_w4a16_kernel(
-//         x.data(), qweight.data(), wscales.data(), wzeros.data(), out.data(),
-//         M, N, K, group_size, dtype_code, stream);
+//                                 M, N, K, group_size, dtype_code, stream);
 // }
 
 // Nanobind wrapper for fused 3D neighborhood attention
@@ -896,10 +858,10 @@ extern "C"
                                          int64_t N, int64_t K, int out_dtype_code,
                                          hipStream_t stream);
 
-        // bool launch_cutlass_int8_dequant_config(const void* A, const void* B, const void* xs,
-        //                                         const void* ws, void* D, int64_t M, int64_t N,
-        //                                         int64_t K, int out_dtype_code, int config,
-        //                                         hipStream_t stream);
+        bool launch_cutlass_int8_dequant_config(const void* A, const void* B, const void* xs,
+                                                const void* ws, void* D, int64_t M, int64_t N,
+                                                int64_t K, int out_dtype_code, int config,
+                                                hipStream_t stream);
         //
         // bool launch_cutlass_turing_int8_dequant(const void* A, const void* B, const void* xs,
         //                                         const void* ws, const void* bias, void* D,
@@ -2448,29 +2410,16 @@ NB_MODULE(_C, m)
         // m.def("svdquant_quantize_w4a4", &svdquant_quantize_w4a4,
         //       "SVDQuant W4A4: smooth + int4 quantize (LoRA-down is external). "
         //       "act_unsigned selects scale=max/15 + clamp [0,15] for u4 MMA downstream; "
-        //       "caller must pre-shift x to be non-negative before calling (model-level
-        //       concern).", nb::arg("x"), nb::arg("smooth"), nb::arg("lora_down"),
-        //       nb::arg("q_x"),
-        //       nb::arg("ascales"),
-        //       nb::arg("lora_act"),
-        //       nb::arg("act_unsigned"),
+        //       "caller must pre-shift x to be non-negative before calling (model-level concern).",
+        //       nb::arg("x"), nb::arg("smooth"), nb::arg("lora_down"), nb::arg("q_x"),
+        //       nb::arg("ascales"), nb::arg("lora_act"), nb::arg("act_unsigned"),
         //       nb::arg("stream_ptr"));
 
         // m.def("svdquant_scaled_mm_w4a4", &svdquant_scaled_mm_w4a4,
-        //       "SVDQuant W4A4: int4 GEMM with per-group dequant",
-        //       nb::arg("act"),
-        //       nb::arg("wgt"),
-        //       nb::arg("ascales"),
-        //       nb::arg("wscales"),
-        //       nb::arg("lora_act_in"),
-        //       nb::arg("lora_up"),
-        //       nb::arg("bias"),
-        //       nb::arg("out"),
-        //       nb::arg("act_unsigned"),
-        //       nb::arg("fast_accum"),
-        //       nb::arg("shared_scale"),
-        //       nb::arg("fuse_lora"),
-        //       nb::arg("stream_ptr"));
+        //       "SVDQuant W4A4: int4 GEMM with per-group dequant", nb::arg("act"), nb::arg("wgt"),
+        //       nb::arg("ascales"), nb::arg("wscales"), nb::arg("lora_act_in"), nb::arg("lora_up"),
+        //       nb::arg("bias"), nb::arg("out"), nb::arg("act_unsigned"), nb::arg("fast_accum"),
+        //       nb::arg("shared_scale"), nb::arg("fuse_lora"), nb::arg("stream_ptr"));
 
         // m.def("awq_w4a16", &awq_w4a16,
         //       "AWQ W4A16: int4 weight @ fp activation (kitchen-native row-major). "

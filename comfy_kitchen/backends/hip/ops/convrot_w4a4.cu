@@ -19,6 +19,17 @@
 #include "../utils.h"
 #include "svdquant_utils.cuh"
 
+#ifdef COMFY_HAVE_CUTLASS
+#include <map>
+#include <mutex>
+#include <tuple>
+
+#include "ck_tile/core.hpp"
+#include "ck_tile/host/kernel_launch.hpp"
+#include "ck_tile/ops/epilogue.hpp"
+#include "ck_tile/ops/gemm.hpp"
+#endif
+
 extern "C" void launch_cublas_gemm_int8_kernel(const void* A_ptr, const void* B_ptr, void* C_ptr,
                                                int64_t M, int64_t N, int64_t K, void* workspace_ptr,
                                                int64_t workspace_size, hipStream_t stream);
@@ -117,6 +128,487 @@ __device__ __forceinline__ int unpack_int4_nibble(uint32_t v)
 {
         return static_cast<int>((v & 0x0fu) ^ 0x08u) - 8;
 }
+
+#ifdef COMFY_HAVE_CUTLASS
+// ============================================================================
+// Dequant epilogue WITH bias: D = acc * x_scale[m] * w_scale[n] + bias[n]
+// ============================================================================
+struct FusedInt4DequantEpilogue
+{
+        template <typename E, typename C, typename D0, typename D1, typename D2>
+        CK_TILE_HOST_DEVICE void operator()(E& e, const C& c, const D0& d0, const D1& d1,
+                                            const D2& d2) const
+        {
+                float val = ck_tile::type_convert<float>(c) * ck_tile::type_convert<float>(d0) *
+                                ck_tile::type_convert<float>(d1) +
+                            ck_tile::type_convert<float>(d2);
+                e = ck_tile::type_convert<E>(val);
+        }
+};
+
+// ============================================================================
+// Dequant epilogue WITHOUT bias: D = acc * x_scale[m] * w_scale[n]
+// ============================================================================
+struct FusedInt4DequantEpilogueNoBias
+{
+        template <typename E, typename C, typename D0, typename D1>
+        CK_TILE_HOST_DEVICE void operator()(E& e, const C& c, const D0& d0, const D1& d1) const
+        {
+                float val = ck_tile::type_convert<float>(c) * ck_tile::type_convert<float>(d0) *
+                            ck_tile::type_convert<float>(d1);
+                e = ck_tile::type_convert<E>(val);
+        }
+};
+
+// ============================================================================
+// GemmConfig for RDNA3 WMMA int4 - optimized for various matrix shapes
+// ============================================================================
+template <int TBM, int TBN, int TBK, int WM, int WN, int WK, int WTM, int WTN, int WTK,
+          int BlockPerCu>
+struct GemmConfigInt4WMMA
+{
+        static constexpr ck_tile::index_t M_Tile = TBM;
+        static constexpr ck_tile::index_t N_Tile = TBN;
+        static constexpr ck_tile::index_t K_Tile = TBK;
+        static constexpr ck_tile::index_t M_Warp = WM;
+        static constexpr ck_tile::index_t N_Warp = WN;
+        static constexpr ck_tile::index_t K_Warp = WK;
+        static constexpr ck_tile::index_t M_Warp_Tile = WTM;
+        static constexpr ck_tile::index_t N_Warp_Tile = WTN;
+        static constexpr ck_tile::index_t K_Warp_Tile = WTK;
+        static constexpr int kBlockPerCu = BlockPerCu;
+
+        static constexpr bool kPadM = true;
+        static constexpr bool kPadN = true;
+        static constexpr bool kPadK = true;
+        static constexpr bool PermuteA = false;
+        static constexpr bool PermuteB = false;
+        static constexpr bool TransposeC = false;
+        static constexpr bool UseStructuredSparsity = false;
+
+        static constexpr ck_tile::index_t TileParitionerGroupNum = 8;
+        static constexpr ck_tile::index_t TileParitionerM01 = 4;
+
+        static constexpr auto Scheduler = ck_tile::GemmPipelineScheduler::Intrawave;
+        static constexpr ck_tile::GemmPipeline Pipeline = ck_tile::GemmPipeline::COMPUTE_V3;
+
+        static constexpr bool DoubleSmemBuffer = true;
+};
+
+// ============================================================================
+// One fused int4 GEMM instance WITH bias
+// ============================================================================
+template <typename ElementOutput, int TBM, int TBN, int TBK, int WM, int WN, int WK, int WTM,
+          int WTN, int WTK, int kBlockPerCu>
+struct FusedInt4GemmCKTile
+{
+        // INT4 is packed as int8_t in memory (2 int4 values per byte)
+        // CK uses int8_t as the storage type but we need to tell it to use int4
+        using ADataType = ck_tile::int4_t;
+        using BDataType = ck_tile::int4_t;
+        using AccDataType = int32_t;
+        using CDataType = ElementOutput;
+
+        using D0DataType = float;  // x_scale - row vector [M]
+        using D1DataType = float;  // w_scale - column vector [N]
+        using D2DataType = float;  // bias - column vector [N]
+        using DsDataType = ck_tile::tuple<D0DataType, D1DataType, D2DataType>;
+
+        using ALayout = ck_tile::tensor_layout::gemm::RowMajor;
+        using BLayout = ck_tile::tensor_layout::gemm::ColumnMajor;
+        using ELayout = ck_tile::tensor_layout::gemm::RowMajor;
+
+        using DsLayout =
+            ck_tile::tuple<ck_tile::tensor_layout::gemm::RowMajor,     // x_scale: [M, 1] broadcast
+                           ck_tile::tensor_layout::gemm::ColumnMajor,  // w_scale: [1, N] broadcast
+                           ck_tile::tensor_layout::gemm::ColumnMajor   // bias: [1, N] broadcast
+                           >;
+
+        using GemmConfig =
+            GemmConfigInt4WMMA<TBM, TBN, TBK, WM, WN, WK, WTM, WTN, WTK, kBlockPerCu>;
+
+        using GemmShape = ck_tile::TileGemmShape<
+            ck_tile::sequence<GemmConfig::M_Tile, GemmConfig::N_Tile, GemmConfig::K_Tile>,
+            ck_tile::sequence<GemmConfig::M_Warp, GemmConfig::N_Warp, GemmConfig::K_Warp>,
+            ck_tile::sequence<GemmConfig::M_Warp_Tile, GemmConfig::N_Warp_Tile,
+                              GemmConfig::K_Warp_Tile>>;
+
+        using TilePartitioner = ck_tile::GemmSpatiallyLocalTilePartitioner<
+            GemmShape, GemmConfig::TileParitionerGroupNum, GemmConfig::TileParitionerM01>;
+
+        using GemmUniversalTraits =
+            ck_tile::TileGemmUniversalTraits<GemmConfig::kPadM, GemmConfig::kPadN,
+                                             GemmConfig::kPadK, GemmConfig::DoubleSmemBuffer,
+                                             ALayout, BLayout, ELayout, GemmConfig::TransposeC>;
+
+        using UniversalGemmProblem =
+            ck_tile::UniversalGemmPipelineProblem<ADataType, BDataType, AccDataType, GemmShape,
+                                                  GemmUniversalTraits, GemmConfig::Scheduler>;
+
+        using GemmPipeline = ck_tile::GemmPipelineAgBgCrCompV3<UniversalGemmProblem>;
+
+        using GemmEpilogue = ck_tile::CShuffleEpilogue<ck_tile::CShuffleEpilogueProblem<
+            ADataType, BDataType, DsDataType, AccDataType, CDataType, DsLayout, ELayout,
+            FusedInt4DequantEpilogue, TilePartitioner::MPerBlock, TilePartitioner::NPerBlock,
+            GemmConfig::M_Warp, GemmConfig::N_Warp, GemmConfig::M_Warp_Tile,
+            GemmConfig::N_Warp_Tile, GemmConfig::K_Warp_Tile, UniversalGemmProblem::TransposeC>>;
+
+        using Kernel = ck_tile::GemmKernelMultiD<TilePartitioner, GemmPipeline, GemmEpilogue>;
+
+        static bool run(const int8_t* A, const int8_t* B, const float* xs, const float* ws,
+                        const float* bias, ElementOutput* D, int M, int N, int K,
+                        hipStream_t stream)
+        {
+                using GemmMultiDArgs = ck_tile::GemmMultiDHostArgs<DsDataType::size()>;
+
+                // For INT4, K is the number of 4-bit elements
+                // The actual bytes stored are K/2 (packed)
+                int stride_A = K / 2;  // RowMajor: A[m,k/2] packed int4
+                int stride_B = K / 2;  // ColumnMajor: B[n,k/2] packed int4
+                int stride_E = N;      // RowMajor output
+
+                int stride_xs = 0;
+                int stride_ws = 0;
+                int stride_bias = 0;
+
+                GemmMultiDArgs args = {
+                    const_cast<int8_t*>(A),
+                    const_cast<int8_t*>(B),
+                    {const_cast<float*>(xs), const_cast<float*>(ws), const_cast<float*>(bias)},
+                    D,
+                    1,
+                    M,
+                    N,
+                    K,  // K is number of int4 elements
+                    stride_A,
+                    stride_B,
+                    {stride_xs, stride_ws, stride_bias},
+                    stride_E};
+
+                auto kargs = Kernel::MakeKernelArgs(args);
+
+                if (!Kernel::IsSupportedArgument(kargs))
+                {
+                        return false;
+                }
+
+                const dim3 grids = Kernel::GridSize(M, N, 1);
+                const dim3 blocks = Kernel::BlockSize();
+
+                ck_tile::stream_config s{stream, false, 1};
+                float elapsed =
+                    ck_tile::launch_kernel(s, ck_tile::make_kernel<GemmConfig::kBlockPerCu>(
+                                                  Kernel{}, grids, blocks, 0, kargs));
+
+                hipError_t err = hipGetLastError();
+                if (err != hipSuccess)
+                {
+                        return false;
+                }
+
+                return elapsed >= 0;
+        }
+};
+
+// ============================================================================
+// One fused int4 GEMM instance WITHOUT bias
+// ============================================================================
+template <typename ElementOutput, int TBM, int TBN, int TBK, int WM, int WN, int WK, int WTM,
+          int WTN, int WTK, int kBlockPerCu>
+struct FusedInt4GemmCKTileNoBias
+{
+        using ADataType = ck_tile::int4_t;
+        using BDataType = ck_tile::int4_t;
+        using AccDataType = int32_t;
+        using CDataType = ElementOutput;
+
+        using D0DataType = float;
+        using D1DataType = float;
+        using DsDataType = ck_tile::tuple<D0DataType, D1DataType>;
+
+        using ALayout = ck_tile::tensor_layout::gemm::RowMajor;
+        using BLayout = ck_tile::tensor_layout::gemm::ColumnMajor;
+        using ELayout = ck_tile::tensor_layout::gemm::RowMajor;
+
+        using DsLayout = ck_tile::tuple<ck_tile::tensor_layout::gemm::RowMajor,
+                                        ck_tile::tensor_layout::gemm::ColumnMajor>;
+
+        using GemmConfig =
+            GemmConfigInt4WMMA<TBM, TBN, TBK, WM, WN, WK, WTM, WTN, WTK, kBlockPerCu>;
+
+        using GemmShape = ck_tile::TileGemmShape<
+            ck_tile::sequence<GemmConfig::M_Tile, GemmConfig::N_Tile, GemmConfig::K_Tile>,
+            ck_tile::sequence<GemmConfig::M_Warp, GemmConfig::N_Warp, GemmConfig::K_Warp>,
+            ck_tile::sequence<GemmConfig::M_Warp_Tile, GemmConfig::N_Warp_Tile,
+                              GemmConfig::K_Warp_Tile>>;
+
+        using TilePartitioner = ck_tile::GemmSpatiallyLocalTilePartitioner<
+            GemmShape, GemmConfig::TileParitionerGroupNum, GemmConfig::TileParitionerM01>;
+
+        using GemmUniversalTraits =
+            ck_tile::TileGemmUniversalTraits<GemmConfig::kPadM, GemmConfig::kPadN,
+                                             GemmConfig::kPadK, GemmConfig::DoubleSmemBuffer,
+                                             ALayout, BLayout, ELayout, GemmConfig::TransposeC>;
+
+        using UniversalGemmProblem =
+            ck_tile::UniversalGemmPipelineProblem<ADataType, BDataType, AccDataType, GemmShape,
+                                                  GemmUniversalTraits, GemmConfig::Scheduler>;
+
+        using GemmPipeline = ck_tile::GemmPipelineAgBgCrCompV3<UniversalGemmProblem>;
+
+        using GemmEpilogue = ck_tile::CShuffleEpilogue<ck_tile::CShuffleEpilogueProblem<
+            ADataType, BDataType, DsDataType, AccDataType, CDataType, DsLayout, ELayout,
+            FusedInt4DequantEpilogueNoBias, TilePartitioner::MPerBlock, TilePartitioner::NPerBlock,
+            GemmConfig::M_Warp, GemmConfig::N_Warp, GemmConfig::M_Warp_Tile,
+            GemmConfig::N_Warp_Tile, GemmConfig::K_Warp_Tile, UniversalGemmProblem::TransposeC>>;
+
+        using Kernel = ck_tile::GemmKernelMultiD<TilePartitioner, GemmPipeline, GemmEpilogue>;
+
+        static bool run(const int8_t* A, const int8_t* B, const float* xs, const float* ws,
+                        ElementOutput* D, int M, int N, int K, hipStream_t stream)
+        {
+                using GemmMultiDArgs = ck_tile::GemmMultiDHostArgs<DsDataType::size()>;
+
+                int stride_A = K / 2;
+                int stride_B = K / 2;
+                int stride_E = N;
+
+                int stride_xs = 0;
+                int stride_ws = 0;
+
+                GemmMultiDArgs args = {const_cast<int8_t*>(A),
+                                       const_cast<int8_t*>(B),
+                                       {const_cast<float*>(xs), const_cast<float*>(ws)},
+                                       D,
+                                       1,
+                                       M,
+                                       N,
+                                       K,
+                                       stride_A,
+                                       stride_B,
+                                       {stride_xs, stride_ws},
+                                       stride_E};
+
+                auto kargs = Kernel::MakeKernelArgs(args);
+
+                if (!Kernel::IsSupportedArgument(kargs))
+                {
+                        return false;
+                }
+
+                const dim3 grids = Kernel::GridSize(M, N, 1);
+                const dim3 blocks = Kernel::BlockSize();
+
+                ck_tile::stream_config s{stream, false, 1};
+                float elapsed =
+                    ck_tile::launch_kernel(s, ck_tile::make_kernel<GemmConfig::kBlockPerCu>(
+                                                  Kernel{}, grids, blocks, 0, kargs));
+
+                hipError_t err = hipGetLastError();
+                if (err != hipSuccess)
+                {
+                        return false;
+                }
+
+                return elapsed >= 0;
+        }
+};
+
+// ============================================================================
+// Autotuning dispatcher WITH bias
+// ============================================================================
+template <typename OutT>
+bool dispatch_fused_int4_ck(const int8_t* A, const int8_t* B, const float* xs, const float* ws,
+                            const float* bias, OutT* D, int M, int N, int K, hipStream_t stream)
+{
+        using Fn = bool (*)(const int8_t*, const int8_t*, const float*, const float*, const float*,
+                            OutT*, int, int, int, hipStream_t);
+
+        // Tile configs from the CUDA version, adapted for CK
+        // Format: <OutT, TBM, TBN, TBK, WM, WN, WK, WTM, WTN, WTK, BlockPerCu>
+        static const Fn runners[] = {
+            &FusedInt4GemmCKTile<OutT, 128, 256, 128, 4, 4, 1, 16, 16, 16, 1>::run,
+            &FusedInt4GemmCKTile<OutT, 128, 256, 256, 4, 4, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTile<OutT, 128, 512, 256, 4, 8, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTile<OutT, 256, 256, 256, 4, 8, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTile<OutT, 256, 128, 256, 4, 4, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTile<OutT, 128, 128, 256, 4, 4, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTile<OutT, 64, 256, 256, 4, 4, 1, 16, 16, 32, 1>::run,
+        };
+        constexpr int NC = sizeof(runners) / sizeof(runners[0]);
+
+        // Special case for known problematic shape
+        if (M == 4608 && N == 3072 && K == 15360)
+        {
+                return runners[0](A, B, xs, ws, bias, D, M, N, K, stream);
+        }
+
+        static std::mutex mtx;
+        static std::map<std::tuple<int, int, int>, int> cache;
+        const std::tuple<int, int, int> key{M, N, K};
+
+        // Thread-local cache for repeated shapes
+        static thread_local int last_m = -1;
+        static thread_local int last_n = -1;
+        static thread_local int last_k = -1;
+        static thread_local int last_best = -2;
+        if (M == last_m && N == last_n && K == last_k)
+        {
+                if (last_best < 0) return false;
+                if (runners[last_best](A, B, xs, ws, bias, D, M, N, K, stream)) return true;
+                return runners[last_best](A, B, xs, ws, bias, D, M, N, K, stream);
+        }
+
+        int best;
+        {
+                std::lock_guard<std::mutex> lk(mtx);
+                auto it = cache.find(key);
+                best = (it != cache.end()) ? it->second : -2;
+        }
+
+        if (best == -2)
+        {
+                best = -1;
+                float best_ms = 1e30f;
+                hipEvent_t s, e;
+                CUDA_CHECK(hipEventCreate(&s));
+                CUDA_CHECK(hipEventCreate(&e));
+
+                for (int i = 0; i < NC; ++i)
+                {
+                        if (!runners[i](A, B, xs, ws, bias, D, M, N, K, stream)) continue;
+                        CUDA_CHECK(hipStreamSynchronize(stream));
+                        for (int r = 0; r < 8; ++r)
+                        {
+                                runners[i](A, B, xs, ws, bias, D, M, N, K, stream);
+                        }
+                        CUDA_CHECK(hipStreamSynchronize(stream));
+                        CUDA_CHECK(hipEventRecord(s, stream));
+                        for (int r = 0; r < 32; ++r)
+                        {
+                                runners[i](A, B, xs, ws, bias, D, M, N, K, stream);
+                        }
+                        CUDA_CHECK(hipEventRecord(e, stream));
+                        CUDA_CHECK(hipEventSynchronize(e));
+                        float ms = 0.f;
+                        CUDA_CHECK(hipEventElapsedTime(&ms, s, e));
+                        if (ms < best_ms)
+                        {
+                                best_ms = ms;
+                                best = i;
+                        }
+                }
+                CUDA_CHECK(hipEventDestroy(s));
+                CUDA_CHECK(hipEventDestroy(e));
+                std::lock_guard<std::mutex> lk(mtx);
+                cache[key] = best;
+        }
+
+        last_m = M;
+        last_n = N;
+        last_k = K;
+        last_best = best;
+        if (best < 0) return false;
+        if (runners[best](A, B, xs, ws, bias, D, M, N, K, stream)) return true;
+        return runners[best](A, B, xs, ws, bias, D, M, N, K, stream);
+}
+
+// ============================================================================
+// Autotuning dispatcher WITHOUT bias
+// ============================================================================
+template <typename OutT>
+bool dispatch_fused_int4_ck_no_bias(const int8_t* A, const int8_t* B, const float* xs,
+                                    const float* ws, OutT* D, int M, int N, int K,
+                                    hipStream_t stream)
+{
+        using Fn = bool (*)(const int8_t*, const int8_t*, const float*, const float*, OutT*, int,
+                            int, int, hipStream_t);
+
+        static const Fn runners[] = {
+            &FusedInt4GemmCKTileNoBias<OutT, 128, 256, 128, 4, 4, 1, 16, 16, 16, 1>::run,
+            &FusedInt4GemmCKTileNoBias<OutT, 128, 256, 256, 4, 4, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTileNoBias<OutT, 128, 512, 256, 4, 8, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTileNoBias<OutT, 256, 256, 256, 4, 8, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTileNoBias<OutT, 256, 128, 256, 4, 4, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTileNoBias<OutT, 128, 128, 256, 4, 4, 1, 16, 16, 32, 1>::run,
+            &FusedInt4GemmCKTileNoBias<OutT, 64, 256, 256, 4, 4, 1, 16, 16, 32, 1>::run,
+        };
+        constexpr int NC = sizeof(runners) / sizeof(runners[0]);
+
+        if (M == 4608 && N == 3072 && K == 15360)
+        {
+                return runners[0](A, B, xs, ws, D, M, N, K, stream);
+        }
+
+        static std::mutex mtx;
+        static std::map<std::tuple<int, int, int>, int> cache;
+        const std::tuple<int, int, int> key{M, N, K};
+
+        static thread_local int last_m = -1;
+        static thread_local int last_n = -1;
+        static thread_local int last_k = -1;
+        static thread_local int last_best = -2;
+        if (M == last_m && N == last_n && K == last_k)
+        {
+                if (last_best < 0) return false;
+                if (runners[last_best](A, B, xs, ws, D, M, N, K, stream)) return true;
+                return runners[last_best](A, B, xs, ws, D, M, N, K, stream);
+        }
+
+        int best;
+        {
+                std::lock_guard<std::mutex> lk(mtx);
+                auto it = cache.find(key);
+                best = (it != cache.end()) ? it->second : -2;
+        }
+
+        if (best == -2)
+        {
+                best = -1;
+                float best_ms = 1e30f;
+                hipEvent_t s, e;
+                CUDA_CHECK(hipEventCreate(&s));
+                CUDA_CHECK(hipEventCreate(&e));
+
+                for (int i = 0; i < NC; ++i)
+                {
+                        if (!runners[i](A, B, xs, ws, D, M, N, K, stream)) continue;
+                        CUDA_CHECK(hipStreamSynchronize(stream));
+                        for (int r = 0; r < 8; ++r)
+                        {
+                                runners[i](A, B, xs, ws, D, M, N, K, stream);
+                        }
+                        CUDA_CHECK(hipStreamSynchronize(stream));
+                        CUDA_CHECK(hipEventRecord(s, stream));
+                        for (int r = 0; r < 32; ++r)
+                        {
+                                runners[i](A, B, xs, ws, D, M, N, K, stream);
+                        }
+                        CUDA_CHECK(hipEventRecord(e, stream));
+                        CUDA_CHECK(hipEventSynchronize(e));
+                        float ms = 0.f;
+                        CUDA_CHECK(hipEventElapsedTime(&ms, s, e));
+                        if (ms < best_ms)
+                        {
+                                best_ms = ms;
+                                best = i;
+                        }
+                }
+                CUDA_CHECK(hipEventDestroy(s));
+                CUDA_CHECK(hipEventDestroy(e));
+                std::lock_guard<std::mutex> lk(mtx);
+                cache[key] = best;
+        }
+
+        last_m = M;
+        last_n = N;
+        last_k = K;
+        last_best = best;
+        if (best < 0) return false;
+        if (runners[best](A, B, xs, ws, D, M, N, K, stream)) return true;
+        return runners[best](A, B, xs, ws, D, M, N, K, stream);
+}
+#endif
 
 template <typename T>
 __device__ __forceinline__ float to_float(T v);
@@ -2932,56 +3424,6 @@ extern "C"
                         }
                 }
         }
-
-        //         void launch_int4_linear_kernel(const void* act, const void* weight, const void*
-        //         x_scales,
-        //                                        const void* weight_scales, const void* bias, void*
-        //                                        output, int64_t M, int64_t N, int64_t K, bool
-        //                                        has_bias, int output_dtype_code, int
-        //                                        bias_dtype_code, hipStream_t stream)
-        //         {
-        //                 if (K % comfy::svdquant::kGroupSize != 0) return;
-        //                 const dim3 grid(static_cast<unsigned int>((N + kBlockN - 1) / kBlockN),
-        //                                 static_cast<unsigned int>((M + kBlockM - 1) / kBlockM));
-        //                 const dim3 block(kThreadsPerBlock);
-        //
-        // #define DISPATCH_OUT_BIAS(OutType, BiasType) \
-        //         int4_linear_kernel<OutType, BiasType><<<grid, block, 0, stream>>>( \
-        //             reinterpret_cast<const int8_t*>(act), reinterpret_cast<const
-        //             int8_t*>(weight), \
-        //             reinterpret_cast<const float*>(x_scales), \
-        //             reinterpret_cast<const float*>(weight_scales), \
-        //             reinterpret_cast<const BiasType*>(bias), reinterpret_cast<OutType*>(output),
-        //             \ static_cast<int>(M), static_cast<int>(N), static_cast<int>(K), has_bias)
-        //
-        // #define DISPATCH_BIAS(OutType)                                      \
-        //         do                                                          \
-        //         {                                                           \
-        //                 if (bias_dtype_code == 2)                           \
-        //                         DISPATCH_OUT_BIAS(OutType, __hip_bfloat16); \
-        //                 else if (bias_dtype_code == 1)                      \
-        //                         DISPATCH_OUT_BIAS(OutType, __half);         \
-        //                 else                                                \
-        //                         DISPATCH_OUT_BIAS(OutType, float);          \
-        //         } while (0)
-        //
-        //                 if (output_dtype_code == 2)
-        //                 {
-        //                         DISPATCH_BIAS(__hip_bfloat16);
-        //                 }
-        //                 else if (output_dtype_code == 1)
-        //                 {
-        //                         DISPATCH_BIAS(__half);
-        //                 }
-        //                 else
-        //                 {
-        //                         DISPATCH_BIAS(float);
-        //                 }
-        //
-        // #undef DISPATCH_BIAS
-        // #undef DISPATCH_OUT_BIAS
-        //         }
-
         void launch_int4_linear_kernel(const void* act, const void* weight, const void* x_scales,
                                        const void* weight_scales, const void* bias, void* output,
                                        int64_t M, int64_t N, int64_t K, bool has_bias,
@@ -3251,6 +3693,74 @@ extern "C"
                             std::string("CUDA chunked INT4 weight INT8 GEMM failed: ") +
                             hipGetErrorString(err));
                 }
+        }
+        bool launch_cutlass_int4_dequant(const void* A, const void* B, const void* xs,
+                                         const void* ws, const void* bias, void* D, int64_t M,
+                                         int64_t N, int64_t K, int out_dtype_code,
+                                         hipStream_t stream)
+        {
+#ifdef COMFY_HAVE_CUTLASS
+                try
+                {
+                        if (M == 0 || N == 0 || K == 0) return true;
+
+                        const int8_t* a = static_cast<const int8_t*>(A);
+                        const int8_t* b = static_cast<const int8_t*>(B);
+                        const float* x = static_cast<const float*>(xs);
+                        const float* w = static_cast<const float*>(ws);
+                        const float* bs = static_cast<const float*>(bias);
+
+                        if (bs == nullptr)
+                        {
+                                switch (out_dtype_code)
+                                {
+                                        case 0:
+                                                return comfy::dispatch_fused_int4_ck_no_bias<float>(
+                                                    a, b, x, w, (float*)D, M, N, K, stream);
+                                        case 1:
+                                                return comfy::dispatch_fused_int4_ck_no_bias<
+                                                    ck_tile::half_t>(a, b, x, w,
+                                                                     (ck_tile::half_t*)D, M, N, K,
+                                                                     stream);
+                                        case 2:
+                                                return comfy::dispatch_fused_int4_ck_no_bias<
+                                                    ck_tile::bf16_t>(a, b, x, w,
+                                                                     (ck_tile::bf16_t*)D, M, N, K,
+                                                                     stream);
+                                        default:
+                                                return false;
+                                }
+                        }
+
+                        switch (out_dtype_code)
+                        {
+                                case 0:
+                                        return comfy::dispatch_fused_int4_ck<float>(
+                                            a, b, x, w, bs, (float*)D, M, N, K, stream);
+                                case 1:
+                                        return comfy::dispatch_fused_int4_ck<ck_tile::half_t>(
+                                            a, b, x, w, bs, (ck_tile::half_t*)D, M, N, K, stream);
+                                case 2:
+                                        return comfy::dispatch_fused_int4_ck<ck_tile::bf16_t>(
+                                            a, b, x, w, bs, (ck_tile::bf16_t*)D, M, N, K, stream);
+                                default:
+                                        return false;
+                        }
+                }
+                catch (const std::exception& e)
+                {
+                        fprintf(stderr, "CK INT4 EXCEPTION: %s\n", e.what());
+                        return false;
+                }
+                catch (...)
+                {
+                        fprintf(stderr, "CK INT4 UNKNOWN EXCEPTION\n");
+                        return false;
+                }
+
+#else
+                return false;
+#endif
         }
 
 }  // extern "C"
