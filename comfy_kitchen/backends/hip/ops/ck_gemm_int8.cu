@@ -176,9 +176,9 @@ struct FusedInt8GemmCKTileOptimized
                 int stride_E = output_stride;  // RowMajor output with stride
 
                 // Strides for broadcast tensors
-                int stride_xs = 0;    // x_scale[m] - same for all n (row broadcast)
-                int stride_ws = 0;    // w_scale[n] - same for all m (column broadcast)
-                int stride_bias = 0;  // bias[n] - same for all m (column broadcast)
+                int stride_xs = 1;    // x_scale[m] - same for all n (row broadcast)
+                int stride_ws = 1;    // w_scale[n] - same for all m (column broadcast)
+                int stride_bias = 1;  // bias[n] - same for all m (column broadcast)
 
                 GemmMultiDArgs args = {
                     const_cast<int8_t*>(A),
@@ -198,6 +198,10 @@ struct FusedInt8GemmCKTileOptimized
 
                 if (!Kernel::IsSupportedArgument(kargs))
                 {
+                        // Use fprintf to stderr - it's unbuffered
+                        fprintf(stderr,
+                                "CK kernel not supported: M=%d N=%d K=%d TBM=%d TBN=%d TBK=%d\n", M,
+                                N, K, TBM, TBN, TBK);
                         return false;
                 }
 
@@ -292,8 +296,8 @@ struct FusedInt8GemmCKTileNoBiasOptimized
                 int stride_B = K;
                 int stride_E = output_stride;
 
-                int stride_xs = 0;
-                int stride_ws = 0;
+                int stride_xs = 1;
+                int stride_ws = 1;
 
                 GemmMultiDArgs args = {const_cast<int8_t*>(A),
                                        const_cast<int8_t*>(B),
@@ -312,6 +316,9 @@ struct FusedInt8GemmCKTileNoBiasOptimized
 
                 if (!Kernel::IsSupportedArgument(kargs))
                 {
+                        fprintf(stderr,
+                                "CK kernel not supported: M=%d N=%d K=%d TBM=%d TBN=%d TBK=%d\n", M,
+                                N, K, TBM, TBN, TBK);
                         return false;
                 }
 

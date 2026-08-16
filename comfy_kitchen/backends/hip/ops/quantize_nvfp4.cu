@@ -142,7 +142,7 @@ __global__ void quantize_nvfp4_kernel(const IType* const input,
         // Broadcast from group leader to all threads in the group
         unsigned int lane_id = threadIdx.x & 0x1f;  // Lane ID within warp (0-31)
         unsigned int group_leader = (lane_id / kThreadsPerGroup) * kThreadsPerGroup;
-        absmax = __shfl_sync(mask, absmax, group_leader, comfy::kThreadsPerWarp);
+        absmax = __shfl_sync(mask, absmax, group_leader, kThreadsPerWarp);
 
         // Compute block scale per NVIDIA spec: decode_scale = absmax / FP4_MAX
         float decode_scale =

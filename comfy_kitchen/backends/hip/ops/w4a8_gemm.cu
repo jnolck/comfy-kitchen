@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-#include "../fp8_utils.h"
+#include "../float_utils.h"
 
 // Grouped int4 -> int8 dequant for the int8-GEMM W4A8 path: out[n,k] =
 // round((q_u[n,k]-8) * s_rel[n, k/G]), q_u packed uint4 (even col=low nibble).

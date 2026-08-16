@@ -57,7 +57,10 @@ set(HIP_SOURCES
     ops/rms_rope.cu
     ops/w4a8_gemm.cu
     #ops/gemv_awq.hip
-    ops/svdquant_w4a4.hip
+    #ops/svdquant_w4a4.hip
+    sage_attention/quant_v_int8.cu
+    sage_attention/quant_qk_int8.cu
+    sage_attention/sage_attn_launcher.cu
 )
 
 set_source_files_properties(${CPP_SOURCES} PROPERTIES LANGUAGE CXX)
