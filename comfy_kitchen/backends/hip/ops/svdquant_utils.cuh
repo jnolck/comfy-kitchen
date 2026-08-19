@@ -280,5 +280,21 @@ __forceinline__ __device__ void cp_async_wait_group()
         asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
 #endif
 }
+/////////////////rocm stuff
+typedef int v2i __attribute__((ext_vector_type(2)));
+typedef int v4i __attribute__((ext_vector_type(4)));
+typedef int v8i __attribute__((ext_vector_type(8)));
+
+// gfx11 INT4 WMMA: 16x16x16, consumes 8 bytes of packed int4 per K-step
+__forceinline__ __device__ v2i load_int4_frag(const int8_t* lds, int row, int kbyte, int stride)
+{
+        const char* p = reinterpret_cast<const char*>(lds) + row * stride + kbyte;
+        return *reinterpret_cast<const v2i*>(p);
+}
+
+__forceinline__ __device__ v8i wmma_int4_16x16x16(v2i a, v2i b, v8i c)
+{
+        return __builtin_amdgcn_wmma_i32_16x16x16_iu4_w32(true, a, true, b, c, false);
+}
 
 }  // namespace comfy::svdquant

@@ -1752,8 +1752,161 @@ __global__ void dequantize_int4_convrot64_warp32_kernel(const int8_t* __restrict
         }
 }
 
-constexpr int kWarpsM = 2;
-constexpr int kWarpsN = 4;
+// constexpr int kWarpsM = 2;
+// constexpr int kWarpsN = 4;
+
+// template <typename OutType, typename BiasType>
+// __global__ void int4_linear_kernel(const int8_t* __restrict__ act,
+//                                    const int8_t* __restrict__ weight,
+//                                    const float* __restrict__ x_scales,
+//                                    const float* __restrict__ weight_scales,
+//                                    const BiasType* __restrict__ bias, OutType* __restrict__ out,
+//                                    int M, int N, int K, bool has_bias)
+// {
+//         // AMD-optimized tile dimensions
+//         constexpr int kBlockM = 32;
+//         constexpr int kBlockN = 128;
+//         constexpr int kBlockKInt8 = kGroupSize;  // 64 int8 per row (unpacked from 32 bytes int4)
+//         constexpr int kBlockKBytes = kGroupSize / 2;
+//         constexpr int kWarpM = 16;
+//         constexpr int kNUnroll = 2;
+//         constexpr int kWarpN = kNUnroll * 16;
+//         constexpr int kWarpsN = 4;
+//         constexpr int kNumWarps = 8;
+//         constexpr int kThreadsPerBlock = kNumWarps * 32;
+//
+//         const int cta_m = blockIdx.y * kBlockM;
+//         const int cta_n = blockIdx.x * kBlockN;
+//         const int warp_id = threadIdx.x >> 5;
+//         const int warp_m = warp_id & (kWarpsM - 1);
+//         const int warp_n = warp_id / kWarpsM;
+//         const int K_half = K / 2;
+//         const int num_groups = K / kGroupSize;
+//
+//         // Shared memory - unpacked int8
+//         // __shared__ alignas(16) int8_t smem_A[kBlockM * kBlockKInt8];
+//         // __shared__ alignas(16) int8_t smem_B[kBlockN * kBlockKInt8];
+//         // __shared__ alignas(16) int32_t smem_acc[kBlockM * kBlockN];
+//         // __shared__ alignas(16) float acc_fp32[kBlockM * kBlockN];
+//
+//         __shared__ int8_t smem_A[kBlockM * kBlockKInt8] __attribute__((aligned(16)));
+//         __shared__ int8_t smem_B[kBlockN * kBlockKInt8] __attribute__((aligned(16)));
+//         __shared__ int32_t smem_acc[kBlockM * kBlockN] __attribute__((aligned(16)));
+//         __shared__ float acc_fp32[kBlockM * kBlockN] __attribute__((aligned(16)));
+//
+//         // Initialize accumulator
+//         for (int i = threadIdx.x; i < kBlockM * kBlockN; i += kThreadsPerBlock)
+//                 acc_fp32[i] = 0.f;
+//         __syncthreads();
+//
+//         for (int g = 0; g < num_groups; g++)
+//         {
+//                 // Load A tile: unpack int4→int8 into shared memory
+//                 const int base_byte = g * kBlockKBytes;
+//                 for (int t = threadIdx.x; t < kBlockM * kBlockKInt8; t += kThreadsPerBlock)
+//                 {
+//                         int m_row = t / kBlockKInt8;
+//                         int k_col = t % kBlockKInt8;
+//                         int m_global = cta_m + m_row;
+//                         int8_t val = 0;
+//                         if (m_global < M)
+//                         {
+//                                 int byte_idx = base_byte + k_col / 2;
+//                                 int nibble = k_col & 1;
+//                                 int8_t packed = act[m_global * K_half + byte_idx];
+//                                 val = unpack_int4_to_int8(packed, nibble);
+//                         }
+//                         smem_A[t] = val;
+//                 }
+//
+//                 // Load B tile: unpack int4→int8
+//                 for (int t = threadIdx.x; t < kBlockN * kBlockKInt8; t += kThreadsPerBlock)
+//                 {
+//                         int n_row = t / kBlockKInt8;
+//                         int k_col = t % kBlockKInt8;
+//                         int n_global = cta_n + n_row;
+//                         int8_t val = 0;
+//                         if (n_global < N)
+//                         {
+//                                 int byte_idx = base_byte + k_col / 2;
+//                                 int nibble = k_col & 1;
+//                                 int8_t packed = weight[n_global * K_half + byte_idx];
+//                                 val = unpack_int4_to_int8(packed, nibble);
+//                         }
+//                         smem_B[t] = val;
+//                 }
+//                 __syncthreads();
+//
+//                 // WMMA: 16×16×16 int8, 4 K-slices, 2 N-tiles per warp
+//                 using A_frag =
+//                     rocwmma::fragment<rocwmma::matrix_a, 16, 16, 16, int8_t, rocwmma::row_major>;
+//                 using B_frag =
+//                     rocwmma::fragment<rocwmma::matrix_b, 16, 16, 16, int8_t, rocwmma::col_major>;
+//                 using AccI32 = rocwmma::fragment<rocwmma::accumulator, 16, 16, 16, int32_t>;
+//
+//                 AccI32 acc_i32[kNUnroll];
+// #pragma unroll
+//                 for (int c = 0; c < kNUnroll; c++)
+// #pragma unroll
+//                         for (int i = 0; i < 8; i++)
+//                                 acc_i32[c].x[i] = 0;
+//
+// #pragma unroll
+//                 for (int ks = 0; ks < 4; ks++)
+//                 {
+//                         A_frag a_frag;
+//                         rocwmma::load_matrix_sync(
+//                             a_frag, &smem_A[warp_m * kWarpM * kBlockKInt8 + ks * 16],
+//                             kBlockKInt8);
+//
+// #pragma unroll
+//                         for (int c = 0; c < kNUnroll; c++)
+//                         {
+//                                 B_frag b_frag;
+//                                 rocwmma::load_matrix_sync(
+//                                     b_frag,
+//                                     &smem_B[(warp_n * kWarpN + c * 16) * kBlockKInt8 + ks * 16],
+//                                     kBlockKInt8);
+//                                 rocwmma::mma_sync(acc_i32[c], a_frag, b_frag, acc_i32[c]);
+//                         }
+//                 }
+//
+// // Store int32 to shared memory
+// #pragma unroll
+//                 for (int c = 0; c < kNUnroll; c++)
+//                         rocwmma::store_matrix_sync(
+//                             &smem_acc[warp_m * kWarpM * kBlockN + warp_n * kWarpN + c * 16],
+//                             acc_i32[c], kBlockN, rocwmma::mem_row_major);
+//                 __syncthreads();
+//
+//                 // Dequant: flat read, multiply by scales
+//                 for (int i = threadIdx.x; i < kBlockM * kBlockN; i += kThreadsPerBlock)
+//                 {
+//                         int row_global = cta_m + i / kBlockN;
+//                         int col_global = cta_n + i % kBlockN;
+//                         if (row_global < M && col_global < N)
+//                         {
+//                                 int32_t v = smem_acc[i];
+//                                 acc_fp32[i] +=
+//                                     (float)v * x_scales[row_global] * weight_scales[col_global];
+//                         }
+//                 }
+//                 __syncthreads();
+//         }
+//
+//         // Write output
+//         for (int i = threadIdx.x; i < kBlockM * kBlockN; i += kThreadsPerBlock)
+//         {
+//                 int row_global = cta_m + i / kBlockN;
+//                 int col_global = cta_n + i % kBlockN;
+//                 if (row_global < M && col_global < N)
+//                 {
+//                         float val = acc_fp32[i];
+//                         if (has_bias) val += to_float(bias[col_global]);
+//                         out[row_global * N + col_global] = from_float<OutType>(val);
+//                 }
+//         }
+// }
 
 template <typename OutType, typename BiasType>
 __global__ void int4_linear_kernel(const int8_t* __restrict__ act,
@@ -1763,146 +1916,172 @@ __global__ void int4_linear_kernel(const int8_t* __restrict__ act,
                                    const BiasType* __restrict__ bias, OutType* __restrict__ out,
                                    int M, int N, int K, bool has_bias)
 {
-        // AMD-optimized tile dimensions
-        constexpr int kBlockM = 32;
+        constexpr int kBlockM = 128;
         constexpr int kBlockN = 128;
-        constexpr int kBlockKInt8 = kGroupSize;  // 64 int8 per row (unpacked from 32 bytes int4)
-        constexpr int kBlockKBytes = kGroupSize / 2;
-        constexpr int kWarpM = 16;
-        constexpr int kNUnroll = 2;
-        constexpr int kWarpN = kNUnroll * 16;
-        constexpr int kWarpsN = 4;
-        constexpr int kNumWarps = 8;
+        constexpr int kBlockKBytes = 64;
+        constexpr int kWarpsM = 4;
+        constexpr int kWarpsN = 2;
+        constexpr int kNumWarps = kWarpsM * kWarpsN;
         constexpr int kThreadsPerBlock = kNumWarps * 32;
+        constexpr int kLdsPad = 8;
+        constexpr int kStride = kBlockKBytes + kLdsPad;
+        constexpr int kMperWarp = kBlockM / kWarpsM;  // 32
+        constexpr int kNperWarp = kBlockN / kWarpsN;  // 64
+        constexpr int kMtiles = kMperWarp / 16;       // 2
+        constexpr int kNtiles = kNperWarp / 16;       // 4
 
         const int cta_m = blockIdx.y * kBlockM;
         const int cta_n = blockIdx.x * kBlockN;
         const int warp_id = threadIdx.x >> 5;
-        const int warp_m = warp_id & (kWarpsM - 1);
-        const int warp_n = warp_id / kWarpsM;
+        const int lane = threadIdx.x & 31;
+        const int warp_m = warp_id / kWarpsN;
+        const int warp_n = warp_id % kWarpsN;
         const int K_half = K / 2;
-        const int num_groups = K / kGroupSize;
 
-        // Shared memory - unpacked int8
-        // __shared__ alignas(16) int8_t smem_A[kBlockM * kBlockKInt8];
-        // __shared__ alignas(16) int8_t smem_B[kBlockN * kBlockKInt8];
-        // __shared__ alignas(16) int32_t smem_acc[kBlockM * kBlockN];
-        // __shared__ alignas(16) float acc_fp32[kBlockM * kBlockN];
+        __shared__ __align__(16) int8_t smem_A[kBlockM * kStride];
+        __shared__ __align__(16) int8_t smem_B[kBlockN * kStride];
 
-        __shared__ int8_t smem_A[kBlockM * kBlockKInt8] __attribute__((aligned(16)));
-        __shared__ int8_t smem_B[kBlockN * kBlockKInt8] __attribute__((aligned(16)));
-        __shared__ int32_t smem_acc[kBlockM * kBlockN] __attribute__((aligned(16)));
-        __shared__ float acc_fp32[kBlockM * kBlockN] __attribute__((aligned(16)));
+        comfy::svdquant::v8i acc[kMtiles][kNtiles];
+#pragma unroll
+        for (int i = 0; i < kMtiles; ++i)
+#pragma unroll
+                for (int j = 0; j < kNtiles; ++j)
+                        acc[i][j] = comfy::svdquant::v8i{0, 0, 0, 0, 0, 0, 0, 0};
 
-        // Initialize accumulator
-        for (int i = threadIdx.x; i < kBlockM * kBlockN; i += kThreadsPerBlock)
-                acc_fp32[i] = 0.f;
+        const int row = lane % 16;
+        const int chunks_per_row = kBlockKBytes / 16;
+        const int chunks_a = kBlockM * chunks_per_row;
+        const int chunks_b = kBlockN * chunks_per_row;
+        const int per_thread_a = chunks_a / kThreadsPerBlock;
+        const int per_thread_b = chunks_b / kThreadsPerBlock;
+
+        uint4 regs_a[per_thread_a];
+        uint4 regs_b[per_thread_b];
+
+        auto load_tile = [&](const int8_t* src, int row0, int rows_total, int kb0, int total_kbytes,
+                             uint4* regs, int per_thread, int chunks_per_row_local)
+        {
+                const int tid = threadIdx.x;
+#pragma unroll
+                for (int i = 0; i < per_thread; ++i)
+                {
+                        const int c = tid * per_thread + i;
+                        const int grow = row0 + c / chunks_per_row_local;
+                        const int gk = kb0 + (c % chunks_per_row_local) * 16;
+                        regs[i] = (grow < rows_total && gk < total_kbytes)
+                                      ? *reinterpret_cast<const uint4*>(
+                                            src + (int64_t)grow * total_kbytes + gk)
+                                      : make_uint4(0, 0, 0, 0);
+                }
+        };
+
+        auto store_tile = [&](int8_t* lds, uint4* regs, int per_thread, int chunks_per_row_local)
+        {
+                const int tid = threadIdx.x;
+#pragma unroll
+                for (int i = 0; i < per_thread; ++i)
+                {
+                        const int c = tid * per_thread + i;
+                        int8_t* dst = lds + (c / chunks_per_row_local) * kStride +
+                                      (c % chunks_per_row_local) * 16;
+                        *reinterpret_cast<uint2*>(dst) = make_uint2(regs[i].x, regs[i].y);
+                        *reinterpret_cast<uint2*>(dst + 8) = make_uint2(regs[i].z, regs[i].w);
+                }
+        };
+
+        load_tile(act, cta_m, M, 0, K_half, regs_a, per_thread_a, chunks_per_row);
+        load_tile(weight, cta_n, N, 0, K_half, regs_b, per_thread_b, chunks_per_row);
+        store_tile(smem_A, regs_a, per_thread_a, chunks_per_row);
+        store_tile(smem_B, regs_b, per_thread_b, chunks_per_row);
         __syncthreads();
 
-        for (int g = 0; g < num_groups; g++)
+        constexpr int kStepBytes = 8;
+        constexpr int kSteps = kBlockKBytes / kStepBytes;
+
+        for (int kb0 = 0; kb0 < K_half; kb0 += kBlockKBytes)
         {
-                // Load A tile: unpack int4→int8 into shared memory
-                const int base_byte = g * kBlockKBytes;
-                for (int t = threadIdx.x; t < kBlockM * kBlockKInt8; t += kThreadsPerBlock)
+                const int knext = kb0 + kBlockKBytes;
+                const bool has_next = knext < K_half;
+
+                if (has_next)
                 {
-                        int m_row = t / kBlockKInt8;
-                        int k_col = t % kBlockKInt8;
-                        int m_global = cta_m + m_row;
-                        int8_t val = 0;
-                        if (m_global < M)
-                        {
-                                int byte_idx = base_byte + k_col / 2;
-                                int nibble = k_col & 1;
-                                int8_t packed = act[m_global * K_half + byte_idx];
-                                val = unpack_int4_to_int8(packed, nibble);
-                        }
-                        smem_A[t] = val;
+                        load_tile(act, cta_m, M, knext, K_half, regs_a, per_thread_a,
+                                  chunks_per_row);
+                        load_tile(weight, cta_n, N, knext, K_half, regs_b, per_thread_b,
+                                  chunks_per_row);
                 }
 
-                // Load B tile: unpack int4→int8
-                for (int t = threadIdx.x; t < kBlockN * kBlockKInt8; t += kThreadsPerBlock)
+                comfy::svdquant::v2i af[2][kMtiles];
+                comfy::svdquant::v2i bf[2][kNtiles];
+
+#pragma unroll
+                for (int i = 0; i < kMtiles; ++i)
+                        af[0][i] = comfy::svdquant::load_int4_frag(
+                            smem_A, warp_m * kMperWarp + i * 16 + row, 0, kStride);
+#pragma unroll
+                for (int j = 0; j < kNtiles; ++j)
+                        bf[0][j] = comfy::svdquant::load_int4_frag(
+                            smem_B, warp_n * kNperWarp + j * 16 + row, 0, kStride);
+
+#pragma unroll
+                for (int kk = 0; kk < kSteps; ++kk)
                 {
-                        int n_row = t / kBlockKInt8;
-                        int k_col = t % kBlockKInt8;
-                        int n_global = cta_n + n_row;
-                        int8_t val = 0;
-                        if (n_global < N)
+                        const int cur = kk & 1;
+                        const int nxt = cur ^ 1;
+
+                        if (kk + 1 < kSteps)
                         {
-                                int byte_idx = base_byte + k_col / 2;
-                                int nibble = k_col & 1;
-                                int8_t packed = weight[n_global * K_half + byte_idx];
-                                val = unpack_int4_to_int8(packed, nibble);
+                                const int kbyte = (kk + 1) * kStepBytes;
+#pragma unroll
+                                for (int i = 0; i < kMtiles; ++i)
+                                        af[nxt][i] = comfy::svdquant::load_int4_frag(
+                                            smem_A, warp_m * kMperWarp + i * 16 + row, kbyte,
+                                            kStride);
+#pragma unroll
+                                for (int j = 0; j < kNtiles; ++j)
+                                        bf[nxt][j] = comfy::svdquant::load_int4_frag(
+                                            smem_B, warp_n * kNperWarp + j * 16 + row, kbyte,
+                                            kStride);
                         }
-                        smem_B[t] = val;
-                }
-                __syncthreads();
-
-                // WMMA: 16×16×16 int8, 4 K-slices, 2 N-tiles per warp
-                using A_frag =
-                    rocwmma::fragment<rocwmma::matrix_a, 16, 16, 16, int8_t, rocwmma::row_major>;
-                using B_frag =
-                    rocwmma::fragment<rocwmma::matrix_b, 16, 16, 16, int8_t, rocwmma::col_major>;
-                using AccI32 = rocwmma::fragment<rocwmma::accumulator, 16, 16, 16, int32_t>;
-
-                AccI32 acc_i32[kNUnroll];
-#pragma unroll
-                for (int c = 0; c < kNUnroll; c++)
-#pragma unroll
-                        for (int i = 0; i < 8; i++)
-                                acc_i32[c].x[i] = 0;
 
 #pragma unroll
-                for (int ks = 0; ks < 4; ks++)
-                {
-                        A_frag a_frag;
-                        rocwmma::load_matrix_sync(
-                            a_frag, &smem_A[warp_m * kWarpM * kBlockKInt8 + ks * 16], kBlockKInt8);
-
+                        for (int i = 0; i < kMtiles; ++i)
 #pragma unroll
-                        for (int c = 0; c < kNUnroll; c++)
-                        {
-                                B_frag b_frag;
-                                rocwmma::load_matrix_sync(
-                                    b_frag,
-                                    &smem_B[(warp_n * kWarpN + c * 16) * kBlockKInt8 + ks * 16],
-                                    kBlockKInt8);
-                                rocwmma::mma_sync(acc_i32[c], a_frag, b_frag, acc_i32[c]);
-                        }
+                                for (int j = 0; j < kNtiles; ++j)
+                                        acc[i][j] = comfy::svdquant::wmma_int4_16x16x16(
+                                            af[cur][i], bf[cur][j], acc[i][j]);
                 }
 
-// Store int32 to shared memory
-#pragma unroll
-                for (int c = 0; c < kNUnroll; c++)
-                        rocwmma::store_matrix_sync(
-                            &smem_acc[warp_m * kWarpM * kBlockN + warp_n * kWarpN + c * 16],
-                            acc_i32[c], kBlockN, rocwmma::mem_row_major);
-                __syncthreads();
-
-                // Dequant: flat read, multiply by scales
-                for (int i = threadIdx.x; i < kBlockM * kBlockN; i += kThreadsPerBlock)
+                if (has_next)
                 {
-                        int row_global = cta_m + i / kBlockN;
-                        int col_global = cta_n + i % kBlockN;
-                        if (row_global < M && col_global < N)
-                        {
-                                int32_t v = smem_acc[i];
-                                acc_fp32[i] +=
-                                    (float)v * x_scales[row_global] * weight_scales[col_global];
-                        }
+                        __syncthreads();
+                        store_tile(smem_A, regs_a, per_thread_a, chunks_per_row);
+                        store_tile(smem_B, regs_b, per_thread_b, chunks_per_row);
+                        __syncthreads();
                 }
-                __syncthreads();
         }
 
-        // Write output
-        for (int i = threadIdx.x; i < kBlockM * kBlockN; i += kThreadsPerBlock)
+        const int col_lane = lane % 16;
+
+#pragma unroll
+        for (int i = 0; i < kMtiles; ++i)
         {
-                int row_global = cta_m + i / kBlockN;
-                int col_global = cta_n + i % kBlockN;
-                if (row_global < M && col_global < N)
+#pragma unroll
+                for (int e = 0; e < 8; ++e)
                 {
-                        float val = acc_fp32[i];
-                        if (has_bias) val += to_float(bias[col_global]);
-                        out[row_global * N + col_global] = from_float<OutType>(val);
+                        const int r = cta_m + warp_m * kMperWarp + i * 16 + 2 * e + (lane / 16);
+                        if (r >= M) continue;
+                        OutType* crow = out + (int64_t)r * N;
+#pragma unroll
+                        for (int j = 0; j < kNtiles; ++j)
+                        {
+                                const int col = cta_n + warp_n * kNperWarp + j * 16 + col_lane;
+                                if (col >= N) continue;
+                                float val = static_cast<float>(acc[i][j][e]) * x_scales[r] *
+                                            weight_scales[col];
+                                if (has_bias) val += to_float(bias[col]);
+                                crow[col] = from_float<OutType>(val);
+                        }
                 }
         }
 }

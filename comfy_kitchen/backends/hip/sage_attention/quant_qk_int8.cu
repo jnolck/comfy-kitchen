@@ -41,7 +41,7 @@ struct VectorLoader4<half>
 {
         __forceinline__ __device__ static void load(const half* ptr, float* out)
         {
-                float2 raw = __ldg(reinterpret_cast<const float2*>(ptr));
+                float2 raw = *reinterpret_cast<const float2*>(ptr);
                 const half* vals = reinterpret_cast<const half*>(&raw);
                 out[0] = static_cast<float>(vals[0]);
                 out[1] = static_cast<float>(vals[1]);
@@ -51,12 +51,12 @@ struct VectorLoader4<half>
 };
 
 template <>
-struct VectorLoader4<hip_bfloat16>
+struct VectorLoader4<__hip_bfloat16>
 {
-        __forceinline__ __device__ static void load(const hip_bfloat16* ptr, float* out)
+        __forceinline__ __device__ static void load(const __hip_bfloat16* ptr, float* out)
         {
-                float2 raw = __ldg(reinterpret_cast<const float2*>(ptr));
-                const hip_bfloat16* vals = reinterpret_cast<const hip_bfloat16*>(&raw);
+                float2 raw = *reinterpret_cast<const float2*>(ptr);
+                const __hip_bfloat16* vals = reinterpret_cast<const __hip_bfloat16*>(&raw);
                 out[0] = static_cast<float>(vals[0]);
                 out[1] = static_cast<float>(vals[1]);
                 out[2] = static_cast<float>(vals[2]);
@@ -69,7 +69,8 @@ struct VectorLoader4<float>
 {
         __forceinline__ __device__ static void load(const float* ptr, float* out)
         {
-                float4 raw = __ldg(reinterpret_cast<const float4*>(ptr));
+                // float4 raw = __ldg(reinterpret_cast<const float4*>(ptr));
+                float4 raw = *reinterpret_cast<const float4*>(ptr);
                 out[0] = raw.x;
                 out[1] = raw.y;
                 out[2] = raw.z;
@@ -124,7 +125,7 @@ __forceinline__ __device__ void convrot64(float* values)
 {
         convrot4(values);
         const int half_lane = threadIdx.x & 15;
-        const unsigned mask = (threadIdx.x & 16) ? 0xffff0000u : 0x0000ffffu;
+        const unsigned long long mask = (threadIdx.x & 16) ? 0xffff0000ull : 0x0000ffffull;
 
 #pragma unroll
         for (int bit = 1; bit < 16; bit <<= 1)
@@ -154,7 +155,7 @@ __forceinline__ __device__ void convrot128_plain(float* values)
 #pragma unroll
                 for (int c = 0; c < 4; ++c)
                 {
-                        const float other = __shfl_xor_sync(0xffffffffu, values[c], bit);
+                        const float other = __shfl_xor_sync(0xfffffffful, values[c], bit);
                         values[c] = (lane & bit) ? other - values[c] : values[c] + other;
                 }
         }
@@ -231,11 +232,14 @@ __forceinline__ __device__ void process_q(const T* __restrict__ in, int8_t* __re
 #pragma unroll
                                                 for (int c = 0; c < 4; ++c)
                                                 {
+                                                        // v[vi + c] = (ch + c < C) ?
+                                                        // static_cast<float>(__ldg(&in[(int64_t)n *
+                                                        // stride_n + ch + c])) : 0.f;
                                                         v[vi + c] =
                                                             (ch + c < C)
-                                                                ? static_cast<float>(__ldg(
-                                                                      &in[(int64_t)n * stride_n +
-                                                                          ch + c]))
+                                                                ? static_cast<float>(
+                                                                      in[(int64_t)n * stride_n +
+                                                                         ch + c])
                                                                 : 0.f;
                                                         mx = fmaxf(mx, fabsf(v[vi + c]));
                                                 }
@@ -357,10 +361,11 @@ __forceinline__ __device__ void process_k(const T* __restrict__ in, int8_t* __re
                         {
 #pragma unroll
                                 for (int c = 0; c < 4; ++c)
+                                        // bias[tile * 4 + c] = (ch + c < C) ?
+                                        // static_cast<float>(__ldg(&in[anchor_offset + c])) : 0.f;
                                         bias[tile * 4 + c] =
-                                            (ch + c < C)
-                                                ? static_cast<float>(__ldg(&in[anchor_offset + c]))
-                                                : 0.f;
+                                            (ch + c < C) ? static_cast<float>(in[anchor_offset + c])
+                                                         : 0.f;
                         }
                 }
         }
@@ -417,11 +422,15 @@ __forceinline__ __device__ void process_k(const T* __restrict__ in, int8_t* __re
 #pragma unroll
                                                 for (int c = 0; c < 4; ++c)
                                                 {
+                                                        // v[vi + c] = (ch + c < C) ?
+                                                        // static_cast<float>(__ldg( &in[(int64_t)n
+                                                        // * stride_n + ch + c])) - bias[tile * 4 +
+                                                        // c] : 0.f;
                                                         v[vi + c] =
                                                             (ch + c < C)
-                                                                ? static_cast<float>(__ldg(
-                                                                      &in[(int64_t)n * stride_n +
-                                                                          ch + c])) -
+                                                                ? static_cast<float>(
+                                                                      in[(int64_t)n * stride_n +
+                                                                         ch + c]) -
                                                                       bias[tile * 4 + c]
                                                                 : 0.f;
                                                         mx = fmaxf(mx, fabsf(v[vi + c]));
@@ -554,8 +563,10 @@ __global__ __launch_bounds__(CENTER_DETECT_THREADS) void detect_k_anchor(
                 const int sample = index / C;
                 const int channel = index - sample * C;
                 const int row = sample * (Lk - 1) / (CENTER_SAMPLES - 1);
+                // samples[index] = static_cast<float>(__ldg(&k_in[bh_offset + (int64_t)row *
+                // stride_n + channel]));
                 samples[index] =
-                    static_cast<float>(__ldg(&k_in[bh_offset + (int64_t)row * stride_n + channel]));
+                    static_cast<float>(k_in[bh_offset + (int64_t)row * stride_n + channel]);
         }
         __syncthreads();
 
@@ -592,14 +603,14 @@ __global__ __launch_bounds__(CENTER_DETECT_THREADS) void detect_k_anchor(
 #pragma unroll
         for (int offset = 16; offset > 0; offset >>= 1)
         {
-                original_energy += __shfl_down_sync(0xffffffffu, original_energy, offset);
+                original_energy += __shfl_down_sync(0xfffffffful, original_energy, offset);
                 original_max =
-                    fmaxf(original_max, __shfl_down_sync(0xffffffffu, original_max, offset));
+                    fmaxf(original_max, __shfl_down_sync(0xfffffffful, original_max, offset));
 #pragma unroll
                 for (int candidate = 0; candidate < CENTER_SAMPLES; ++candidate)
                 {
                         candidate_distance[candidate] +=
-                            __shfl_down_sync(0xffffffffu, candidate_distance[candidate], offset);
+                            __shfl_down_sync(0xfffffffful, candidate_distance[candidate], offset);
                 }
         }
 
@@ -655,8 +666,8 @@ __global__ __launch_bounds__(CENTER_DETECT_THREADS) void detect_k_anchor(
 #pragma unroll
         for (int offset = 16; offset > 0; offset >>= 1)
         {
-                best_energy += __shfl_down_sync(0xffffffffu, best_energy, offset);
-                best_max = fmaxf(best_max, __shfl_down_sync(0xffffffffu, best_max, offset));
+                best_energy += __shfl_down_sync(0xfffffffful, best_energy, offset);
+                best_max = fmaxf(best_max, __shfl_down_sync(0xfffffffful, best_max, offset));
         }
         if (lane == 0)
         {
@@ -719,7 +730,9 @@ __global__ __launch_bounds__(128, 4) void quant_k_kernel(
         const int64_t in_bh = (int64_t)b * stride_b + (int64_t)h * stride_h;
         const int64_t out_bh = ((int64_t)b * H_kv + h) * Lk * C;
         const int64_t sbh = ((int64_t)b * H_kv + h) * k_sc_per_h;
-        const int anchor_index = __ldg(&anchor_indices[b * H_kv + h]);
+        // const int anchor_index = __ldg(&anchor_indices[b * H_kv + h]);
+        const int anchor_index = anchor_indices[b * H_kv + h];
+
         process_k<T, NL, WARPK, CHANNEL_TILES, ROTATION, ALIGNED4>(
             k_in + in_bh, k_out + out_bh, k_sb + sbh, oblk, Lk, C, anchor_index, stride_n);
 }
@@ -757,7 +770,8 @@ __global__ __launch_bounds__(128, 3) void quant_qk_fused(
                 const int64_t in_bh = (int64_t)b * k_stride_b + (int64_t)h * k_stride_h;
                 const int64_t out_bh = ((int64_t)b * H_kv + h) * Lk * C;
                 const int64_t sbh = ((int64_t)b * H_kv + h) * k_sc_per_h;
-                const int anchor_index = __ldg(&anchor_indices[b * H_kv + h]);
+                // const int anchor_index = __ldg(&anchor_indices[b * H_kv + h]);
+                const int anchor_index = anchor_indices[b * H_kv + h];
                 process_k<T, NL, WARPK, CHANNEL_TILES, ROTATION, ALIGNED4>(
                     k_in + in_bh, k_out + out_bh, k_sb + sbh, (int)blockIdx.x - q_oblk_count, Lk, C,
                     anchor_index, k_stride_n);

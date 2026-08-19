@@ -298,6 +298,10 @@ def _cuda_device_supports_cutlass_int8_dequant(tensor: torch.Tensor) -> bool:
 def _cuda_device_supports_native_int4_mma(tensor: torch.Tensor) -> bool:
     if not tensor.is_cuda or _FORCE_INT4_INT8_FALLBACK:
         return False
+    # if hasattr(torch.version, "hip") and torch.version.hip is not None:
+    #     # RDNA3+ supports native INT4 WMMA
+    #     # TODO: Verify this is the right check for your GPU
+    #     return True
     major, _minor = _cuda_device_capability(tensor.get_device())
     # The current ConvRot W4A4 kernel emits m16n8k64 s4 MMA, which is the
     # sm80+ integer MMA shape. Hopper is routed through the INT8 fallback for
@@ -1315,6 +1319,107 @@ def dequantize_convrot_w4a4_weight(
     return _rotate_weight(w_rot.float(), h, convrot_groupsize).to(output_dtype)
 
 
+# def convrot_w4a4_linear(
+#     x: torch.Tensor,
+#     qweight: torch.Tensor,
+#     wscales: torch.Tensor,
+#     bias: torch.Tensor | None = None,
+#     convrot_groupsize: int = 256,
+#     quant_group_size: int = _INT4_GROUP_SIZE,
+#     linear_dtype: str = "int4",
+# ) -> torch.Tensor:
+#     """Compute ``x @ W.T + bias`` using ConvRot W4A4 signed INT4 MMA."""
+#     if linear_dtype not in {"int4", "int8"}:
+#         raise ValueError(
+#             f"ConvRot W4A4 linear_dtype must be 'int4' or 'int8', got {linear_dtype!r}"
+#         )
+#     if quant_group_size != _INT4_GROUP_SIZE:
+#         raise ValueError(f"int4 MMA kernel requires quant_group_size {_INT4_GROUP_SIZE}")
+#     if x.shape[-1] != qweight.shape[-1] * 2:
+#         raise ValueError(f"Input K={x.shape[-1]} does not match qweight K={qweight.shape[-1] * 2}")
+#     if x.shape[-1] % convrot_groupsize != 0:
+#         raise ValueError(
+#             f"Input K={x.shape[-1]} not divisible by convrot_groupsize {convrot_groupsize}"
+#         )
+#
+#     orig_shape = x.shape
+#     x2d = x.reshape(-1, orig_shape[-1]).contiguous()
+#     if linear_dtype == "int8" or not (
+#         _cuda_device_supports_native_int4_mma(x2d) or _should_use_turing_int4(x2d)
+#     ):
+#         if (
+#             convrot_groupsize == 256
+#             and x2d.shape[-1] % 256 == 0
+#             and 256 <= x2d.shape[-1] <= _CONVROT_FUSED_MAX_K
+#             and _convrot_fused_shared_memory_fits(x2d, x2d.shape[-1], convrot_groupsize)
+#         ):
+#             qact_int8, x_scale = quantize_int8_rowwise_convrot64(x2d, convrot_groupsize)
+#         elif _should_use_convrot_fused_kernel(x2d, x2d.shape[-1], convrot_groupsize):
+#             qact_int8, x_scale = quantize_int8_rowwise_convrot(x2d, convrot_groupsize)
+#         else:
+#             h = _build_hadamard(convrot_groupsize, device=x2d.device, dtype=x2d.dtype)
+#             qact_int8, x_scale = quantize_and_rotate_rowwise(x2d, h, convrot_groupsize)
+#         if _cuda_device_is_turing(qact_int8.get_device()):
+#             qweight_int8 = prepare_int4_weight_for_int8_linear(qweight.contiguous())
+#             out = _int4_linear_via_int8_values(
+#                 qact_int8,
+#                 qweight_int8,
+#                 x_scale,
+#                 wscales,
+#                 bias,
+#                 x.dtype,
+#             )
+#             return out.reshape(*orig_shape[:-1], qweight.shape[0])
+#         if qact_int8.shape[0] <= _INT4_PACKED_WEIGHT_SMALL_M_MAX and hasattr(
+#             _C, "int4_weight_int8_act_gemv_dequant"
+#         ):
+#             out = _int4_weight_int8_act_gemv_dequant(
+#                 qact_int8,
+#                 qweight,
+#                 x_scale,
+#                 wscales,
+#                 bias,
+#                 x.dtype,
+#             )
+#             return out.reshape(*orig_shape[:-1], qweight.shape[0])
+#         # out = _int4_weight_int8_act_gemm_dequant_chunked(
+#         #     qact_int8,
+#         #     qweight,
+#         #     x_scale,
+#         #     wscales,
+#         #     bias,
+#         #     x.dtype,
+#         # )
+#         # return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
+#         qweight_int8 = prepare_int4_weight_for_int8_linear(qweight.contiguous())
+#         out = _int4_linear_via_int8_values(
+#             qact_int8,
+#             qweight_int8,
+#             x_scale,
+#             wscales,
+#             bias,
+#             x.dtype,
+#         )
+#         return out.reshape(*orig_shape[:-1], qweight.shape[0])
+#     if (
+#         convrot_groupsize in (16, 64, 256)
+#         and hasattr(_C, "quantize_int4_rowwise_convrot64")
+#         and _convrot_int4_fused_shared_memory_fits(x2d, x2d.shape[-1], convrot_groupsize)
+#     ):
+#         qact, x_scale = quantize_int4_rowwise_convrot64(x2d, convrot_groupsize)
+#     else:
+#         h = _build_hadamard(convrot_groupsize, device=x2d.device, dtype=x2d.dtype)
+#         x_rot = _rotate_activation(x2d, h, convrot_groupsize).contiguous()
+#         qact, x_scale = quantize_int4_rowwise(x_rot)
+#     out = int4_linear(
+#         qact,
+#         qweight,
+#         x_scale,
+#         wscales,
+#         bias=bias,
+#         out_dtype=x.dtype,
+#     )
+#     return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
 def convrot_w4a4_linear(
     x: torch.Tensor,
     qweight: torch.Tensor,
@@ -1378,25 +1483,15 @@ def convrot_w4a4_linear(
                 x.dtype,
             )
             return out.reshape(*orig_shape[:-1], qweight.shape[0])
-        # out = _int4_weight_int8_act_gemm_dequant_chunked(
-        #     qact_int8,
-        #     qweight,
-        #     x_scale,
-        #     wscales,
-        #     bias,
-        #     x.dtype,
-        # )
-        # return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
-        qweight_int8 = prepare_int4_weight_for_int8_linear(qweight.contiguous())
-        out = _int4_linear_via_int8_values(
+        out = _int4_weight_int8_act_gemm_dequant_chunked(
             qact_int8,
-            qweight_int8,
+            qweight,
             x_scale,
             wscales,
             bias,
             x.dtype,
         )
-        return out.reshape(*orig_shape[:-1], qweight.shape[0])
+        return out[: x2d.shape[0]].reshape(*orig_shape[:-1], qweight.shape[0])
     if (
         convrot_groupsize in (16, 64, 256)
         and hasattr(_C, "quantize_int4_rowwise_convrot64")

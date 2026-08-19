@@ -134,12 +134,13 @@ struct smem_t
                 }
                 else if constexpr (swizzle_mode == SwizzleMode::k64B)
                 {
-                        static_assert(step_size == 4, "Unsupported step size");
+                        static_assert(step_size == 2 || step_size == 4 || step_size == 8,
+                                      "Unsupported step size");
                         return offset + step_size;
                 }
                 else if constexpr (swizzle_mode == SwizzleMode::k32B)
                 {
-                        static_assert(step_size == 2, "Unsupported step size");
+                        static_assert(step_size == 2 || step_size == 4, "Unsupported step size");
                         return offset + step_size;
                 }
         }
@@ -205,7 +206,7 @@ struct smem_t
                 }
                 else if constexpr (swizzle_mode == SwizzleMode::k64B)
                 {
-                        static_assert(step_size == 4 || step_size % 8 == 0,
+                        static_assert(step_size == 2 || step_size == 4 || step_size % 8 == 0,
                                       "Unsupported step size");
                         if constexpr (step_size == 4)
                         {

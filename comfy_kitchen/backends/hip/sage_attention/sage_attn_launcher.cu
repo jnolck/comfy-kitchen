@@ -126,42 +126,42 @@ extern "C" void launch_sage_attn_kernel(
                 LAUNCH(HD, 64, MM, DT, FUSE_FP32);  \
         }
 
-#define DISPATCH_DTYPE(HD, MM)                                           \
-        if (output_dtype_code == 1)                                      \
-        {                                                                \
-                if constexpr (MM == MaskMode::kNone)                     \
-                {                                                        \
-                        if (kv_len <= 512 && cta_k == 64)                \
-                        {                                                \
-                                LAUNCH(HD, 64, MM, half, false);         \
-                        }                                                \
-                        else                                             \
-                        {                                                \
-                                LAUNCH_CTA(HD, MM, half, true);          \
-                        }                                                \
-                }                                                        \
-                else                                                     \
-                {                                                        \
-                        LAUNCH(HD, 64, MM, half, true);                  \
-                }                                                        \
-        }                                                                \
-        else                                                             \
-        {                                                                \
-                if constexpr (MM == MaskMode::kNone)                     \
-                {                                                        \
-                        if (kv_len <= 512 && cta_k == 64)                \
-                        {                                                \
-                                LAUNCH(HD, 64, MM, hip_bfloat16, false); \
-                        }                                                \
-                        else                                             \
-                        {                                                \
-                                LAUNCH_CTA(HD, MM, hip_bfloat16, true);  \
-                        }                                                \
-                }                                                        \
-                else                                                     \
-                {                                                        \
-                        LAUNCH(HD, 64, MM, hip_bfloat16, true);          \
-                }                                                        \
+#define DISPATCH_DTYPE(HD, MM)                                             \
+        if (output_dtype_code == 1)                                        \
+        {                                                                  \
+                if constexpr (MM == MaskMode::kNone)                       \
+                {                                                          \
+                        if (kv_len <= 512 && cta_k == 64)                  \
+                        {                                                  \
+                                LAUNCH(HD, 64, MM, half, false);           \
+                        }                                                  \
+                        else                                               \
+                        {                                                  \
+                                LAUNCH_CTA(HD, MM, half, true);            \
+                        }                                                  \
+                }                                                          \
+                else                                                       \
+                {                                                          \
+                        LAUNCH(HD, 64, MM, half, true);                    \
+                }                                                          \
+        }                                                                  \
+        else                                                               \
+        {                                                                  \
+                if constexpr (MM == MaskMode::kNone)                       \
+                {                                                          \
+                        if (kv_len <= 512 && cta_k == 64)                  \
+                        {                                                  \
+                                LAUNCH(HD, 64, MM, __hip_bfloat16, false); \
+                        }                                                  \
+                        else                                               \
+                        {                                                  \
+                                LAUNCH_CTA(HD, MM, __hip_bfloat16, true);  \
+                        }                                                  \
+                }                                                          \
+                else                                                       \
+                {                                                          \
+                        LAUNCH(HD, 64, MM, __hip_bfloat16, true);          \
+                }                                                          \
         }
 
 #define DISPATCH_MASK(HD)                                         \
