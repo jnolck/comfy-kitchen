@@ -30,11 +30,11 @@
 #include <climits>
 // #include <cuda_pipeline_primitives.h>
 
-#include "cp_async.cuh"
-#include "math.cuh"
-#include "mma.cuh"
-#include "numeric_conversion.cuh"
-#include "permuted_smem.cuh"
+#include "cp_async.h"
+#include "math.h"
+#include "mma.h"
+#include "numeric_conversion.h"
+#include "permuted_smem.h"
 
 #ifndef __HIP_PLATFORM_AMD__
 #define __HIP_PLATFORM_AMD__

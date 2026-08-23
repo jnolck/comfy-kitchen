@@ -29,11 +29,11 @@
 
 #include <cstdint>
 
-#include "attn_utils.cuh"
-#include "cp_async.cuh"
-#include "math.cuh"
-#include "mma.cuh"
-#include "permuted_smem.cuh"
+#include "attn_utils.h"
+#include "cp_async.h"
+#include "math.h"
+#include "mma.h"
+#include "permuted_smem.h"
 
 #define PACK_SIZE_QK 16  // as if it is int8
 #define PACK_SIZE_V 16   // int8

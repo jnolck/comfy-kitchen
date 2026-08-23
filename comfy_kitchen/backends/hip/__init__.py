@@ -2934,10 +2934,10 @@ def adaln(
     return _adaln_impl(_C.adaln, x, scale, shift, eps)
 
 
-def rms_adaln(
-    x: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor, eps: float = 1e-6
-) -> torch.Tensor:
-    return _adaln_impl(_C.rms_adaln, x, scale, shift, eps)
+# def rms_adaln(
+#     x: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor, eps: float = 1e-6
+# ) -> torch.Tensor:
+#     return _adaln_impl(_C.rms_adaln, x, scale, shift, eps)
 
 
 def _apply_rope1_cuda(
@@ -3684,20 +3684,20 @@ def _build_constraints() -> dict:
             },
             default_devices=cuda_devices,
         ),
-        "rms_adaln": FunctionConstraints(
-            params={
-                "x": ParamConstraint(
-                    dtypes=frozenset({torch.float32, torch.float16, torch.bfloat16}),
-                ),
-                "scale": ParamConstraint(
-                    dtypes=frozenset({torch.float32, torch.float16, torch.bfloat16}),
-                ),
-                "shift": ParamConstraint(
-                    dtypes=frozenset({torch.float32, torch.float16, torch.bfloat16}),
-                ),
-            },
-            default_devices=cuda_devices,
-        ),
+        # "rms_adaln": FunctionConstraints(
+        #     params={
+        #         "x": ParamConstraint(
+        #             dtypes=frozenset({torch.float32, torch.float16, torch.bfloat16}),
+        #         ),
+        #         "scale": ParamConstraint(
+        #             dtypes=frozenset({torch.float32, torch.float16, torch.bfloat16}),
+        #         ),
+        #         "shift": ParamConstraint(
+        #             dtypes=frozenset({torch.float32, torch.float16, torch.bfloat16}),
+        #         ),
+        #     },
+        #     default_devices=cuda_devices,
+        # ),
         "quantize_per_tensor_fp8": FunctionConstraints(
             params={
                 "x": ParamConstraint(
@@ -4260,35 +4260,35 @@ def _build_constraints() -> dict:
             default_devices=cuda_devices,
             min_compute_capability=(7, 5),
         )
-        # constraints["scaled_mm_nvfp4"] = FunctionConstraints(
-        #     params={
-        #         "a": ParamConstraint(
-        #             dtypes=frozenset({torch.uint8}),
-        #             shape_rules=(ExactDims(2), DivisibleBy(dim=1, factor=16)),
-        #         ),
-        #         "b": ParamConstraint(
-        #             dtypes=frozenset({torch.uint8}),
-        #             shape_rules=(ExactDims(2), DivisibleBy(dim=1, factor=16)),
-        #         ),
-        #         "tensor_scale_a": ParamConstraint(
-        #             dtypes=frozenset({torch.float32}),
-        #         ),
-        #         "tensor_scale_b": ParamConstraint(
-        #             dtypes=frozenset({torch.float32}),
-        #         ),
-        #         "block_scale_a": ParamConstraint(
-        #             dtypes=frozenset({torch.float8_e4m3fn}),
-        #         ),
-        #         "block_scale_b": ParamConstraint(
-        #             dtypes=frozenset({torch.float8_e4m3fn}),
-        #         ),
-        #         "out_dtype": ParamConstraint(
-        #             dtypes=frozenset({torch.float16, torch.bfloat16}),
-        #         ),
-        #     },
-        #     default_devices=cuda_devices,
-        #     min_compute_capability=(10, 0),
-        # )
+        constraints["scaled_mm_nvfp4"] = FunctionConstraints(
+            params={
+                "a": ParamConstraint(
+                    dtypes=frozenset({torch.uint8}),
+                    shape_rules=(ExactDims(2), DivisibleBy(dim=1, factor=16)),
+                ),
+                "b": ParamConstraint(
+                    dtypes=frozenset({torch.uint8}),
+                    shape_rules=(ExactDims(2), DivisibleBy(dim=1, factor=16)),
+                ),
+                "tensor_scale_a": ParamConstraint(
+                    dtypes=frozenset({torch.float32}),
+                ),
+                "tensor_scale_b": ParamConstraint(
+                    dtypes=frozenset({torch.float32}),
+                ),
+                "block_scale_a": ParamConstraint(
+                    dtypes=frozenset({torch.float8_e4m3fn}),
+                ),
+                "block_scale_b": ParamConstraint(
+                    dtypes=frozenset({torch.float8_e4m3fn}),
+                ),
+                "out_dtype": ParamConstraint(
+                    dtypes=frozenset({torch.float16, torch.bfloat16}),
+                ),
+            },
+            default_devices=cuda_devices,
+            min_compute_capability=(10, 0),
+        )
 
     for inplace_name, functional_name in {
         "apply_rope_": "apply_rope",

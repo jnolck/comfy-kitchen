@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "qk_int_sv_i8_cuda.cuh"
+#include "qk_int_sv_i8_cuda.h"
 
 namespace
 {

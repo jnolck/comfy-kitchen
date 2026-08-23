@@ -1,9 +1,10 @@
 CompileFlags:
-  Add: [
+  Add:
+    [
       "-x",
       "hip",
       "-D__HIP_PLATFORM_AMD__=1",
-      "--cuda-gpu-arch=gfx1100", # Adjust to your exact target GPU (e.g., gfx942 or gfx1100)
+      "--cuda-gpu-arch=gfx1100",
       "-I/var/home/jnolck/Documents/src/ai/comfy-kitchen/third_party/composable_kernel/include",
       "-I/home/jnolck/Documents/src/ai/.venv/lib/python3.12/site-packages/_rocm_sdk_devel/include",
       "-I/home/jnolck/Documents/src/ai/.venv/lib/python3.12/site-packages/_rocm_sdk_devel/include/hip",

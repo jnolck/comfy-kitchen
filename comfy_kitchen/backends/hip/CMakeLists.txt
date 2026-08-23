@@ -58,8 +58,9 @@ set(HIP_SOURCES
     ops/convrot_w4a4.cu
     ops/rms_rope.cu
     ops/w4a8_gemm.cu
-    #ops/gemv_awq.hip
-    #ops/svdquant_w4a4.hip
+    ops/awq_w4a16.cu
+    ops/quantize_svdquant_w4a4.cu
+    ops/scaled_mm_svdquant_w4a4.cu
     sage_attention/quant_v_int8.cu
     sage_attention/quant_qk_int8.cu
     sage_attention/sage_attn_launcher.cu

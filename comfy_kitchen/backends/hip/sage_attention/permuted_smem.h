@@ -26,8 +26,8 @@
 
 // #include <cuda/pipeline>
 
-#include "cp_async.cuh"
-#include "mma.cuh"
+#include "cp_async.h"
+#include "mma.h"
 
 enum class SwizzleMode
 {
